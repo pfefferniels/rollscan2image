@@ -146,8 +146,11 @@ def hole_histogram(scan: RollScan, band: PaperBand, gains, hole_min) -> np.ndarr
     return hist
 
 
-def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGrid:
-    """Comb fit: the pitch at which every hole centre lines up best.
+MAX_UNUSED_RUN = 6  # empty tracks that may interrupt the played compass
+
+
+def comb_fit(hist: np.ndarray, search: tuple[float, float]) -> tuple[float, float, float]:
+    """The pitch at which the hole centres in `hist` line up best.
 
     Maximising |sum w exp(2 pi i x / p)| is a circular-mean fit, so it uses
     every hole rather than a handful of detected peaks, and it does not need
@@ -166,8 +169,45 @@ def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGr
     scores = np.array([coherence(p) for p in fine])
     pitch = float(fine[scores.argmax()])
     angle = np.angle(np.sum(weights * np.exp(2j * np.pi * columns / pitch)))
-    phase = float((-angle / (2 * np.pi)) * pitch % pitch)
-    return TrackGrid(pitch, phase, float(scores.max()), occupied_tracks(hist, pitch, phase))
+    return pitch, float((-angle / (2 * np.pi)) * pitch % pitch), float(scores.max())
+
+
+def played_compass(hist: np.ndarray, pitch: float, phase: float) -> tuple[int, int]:
+    """Column range of the longest unbroken run of tracks the roll plays.
+
+    A roll only pins down the grid where it uses it.  Perforations far outside
+    the played compass — the edge groups on this Welte roll — sit off the note
+    grid and drag the comb low, so the pitch is remeasured over this range."""
+    cells = np.array(
+        [k for k in range(-4, int(len(hist) / pitch) + 4) if cell_mass(hist, pitch, phase, k)]
+    )
+    if len(cells) < 4:
+        return 0, len(hist)
+    breaks = np.flatnonzero(np.diff(cells) > MAX_UNUSED_RUN + 1)
+    runs = np.split(cells, breaks + 1)
+    best = max(runs, key=lambda r: sum(cell_mass(hist, pitch, phase, k) for k in r))
+    lo = int(phase + pitch * (best[0] - 0.5))
+    hi = int(phase + pitch * (best[-1] + 0.5)) + 1
+    return max(0, lo), min(len(hist), hi)
+
+
+def cell_mass(hist: np.ndarray, pitch: float, phase: float, k: int) -> float:
+    """Holes in track cell k, or 0 if the cell falls outside the sensor."""
+    centre = phase + pitch * k
+    lo, hi = int(centre - pitch / 2), int(centre + pitch / 2) + 1
+    if lo < 0 or hi > len(hist):
+        return 0.0
+    total = float(hist[lo:hi].sum())
+    return total if total >= 200 else 0.0
+
+
+def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGrid:
+    pitch, phase, _ = comb_fit(hist, search)
+    lo, hi = played_compass(hist, pitch, phase)
+    trimmed = np.zeros_like(hist)
+    trimmed[lo:hi] = hist[lo:hi]
+    pitch, phase, coherence = comb_fit(trimmed, search)
+    return TrackGrid(pitch, phase, coherence, occupied_tracks(trimmed, pitch, phase))
 
 
 def occupied_tracks(hist: np.ndarray, pitch: float, phase: float) -> int:

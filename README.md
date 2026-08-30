@@ -203,32 +203,42 @@ in a 4096-column frame. The two axes need different scale factors because MRS
 pixels are not square:
 
 - **Across**, the ruler is the roll's own tracker grid, recovered by a comb fit
-  over every hole in the scan. On WR0225_02 that gives 15.4205 px between
+  over the tracks the roll plays. On WR0225_02 that gives 15.4664 px between
   tracks; against the 3.18687 mm pitch implied by the trailer's `First Track`,
-  `Last Track` and `Number Of Tracks`, that is 4.8388 px/mm ≈ 122.9 dpi.
+  `Last Track` and `Number Of Tracks`, that is 4.8532 px/mm ≈ 123.3 dpi.
 - **Along**, the transport's design step of 0.2 mm per line = 127 dpi, which
   Debrunner states outright. The colour scan's `MRSC_Length` confirms it to
   0.04 %, and the two rasters share the step to 0.05 %.
 
-How precise is that pitch? Less than the four decimals suggest. Different
-estimators on the same histogram land between about 15.39 and 15.46 px:
+A roll only pins down the grid where it plays. This one uses 37 tracks
+spanning columns 577-1303 of a 1,569 px paper, and the perforations outside that
+compass — two groups near each paper edge, present the whole length of the roll —
+do not sit on the note grid: against a grid fitted to the played tracks they land
+0.41 to 0.49 of a pitch off, and the two treble groups deviate in *opposite*
+directions only three pitches apart, which no smooth optical distortion could
+produce. Left in, they drag the comb 0.3 % low. So the pitch is measured, then
+remeasured over the longest unbroken run of played tracks:
 
-| estimator | pitch |
-| --- | --- |
-| comb, global circular mean over all 141,162 holes | 15.4205 px |
-| zeroing the linear drift of the local grid phase | 15.3964 px |
-| weighted least squares over occupied track centres | 15.3917 px |
-| local comb in the well-populated middle windows | ~15.46 px |
-| semitone spacing from the scanner's own MIDI | ~15.44 px |
+| estimator | pitch | coherence |
+| --- | --- | --- |
+| comb over the whole paper | 15.4205 px | 0.807 |
+| comb over the played compass (used) | 15.4664 px | 0.879 |
+| integer grid fit to 31 played track centres | 15.4682 px | rms 0.05 pitch |
+| least squares over all track centres | 15.3917 px | |
+| zeroing the linear drift of the grid phase | 15.3964 px | |
 
-They disagree because the apparent local pitch is not quite constant across the
-sensor, so no single uniform grid fits everywhere and each criterion settles on
-a different weighted average. The comb value is the one reported: it is the
-uniform grid that best fits every hole, and it needs no window parameter (the
-least-squares refinement swings 0.5 % as its window is varied, which is why it
-was dropped). The 0.4 % spread is immaterial downstream — remeasuring at
-15.3922 instead of 15.4205 moved `MUSICAL_HOLES` by one, `MUSICAL_NOTES` by one,
-and left `BAD_HOLE_COUNT` at 8.
+The two independent measurements restricted to the played compass agree to
+0.01 %. The three that include the edge groups sit 0.3-0.5 % low, and the
+apparent 1.9 % "arch" in local pitch across the sensor is the same artefact seen
+another way: the windows carrying it hold four to seven tracks each, and a
+handful of tracks separated by large empty gaps can be fitted at many periods.
+Restricted to windows with at least eight occupied tracks the spread is 0.46 %.
+
+None of this matters much downstream — remeasuring from 15.3922 to 15.4664 moved
+`MUSICAL_HOLES` by two, `MUSICAL_NOTES` by one, and `BAD_HOLE_COUNT` from 8 to 7
+— but the played-compass value is the one with two independent methods behind it.
+Whether the grid is genuinely uniform out to the paper edges this roll cannot
+say, since it never plays there; that needs a roll using its full compass.
 
 The across scale has to be measured rather than looked up. Debrunner publishes
 0.22 mm/px for the 2048-px Durchlicht camera and 0.21 mm/px for the 2098-px
@@ -243,7 +253,7 @@ and the calibration section describes computing each camera's
 measuring roll of known dimensions.
 
 Two independent measurements say the across scale is right. The scanner's own
-MIDI puts one semitone 15.44 px apart, inside the spread above; and after
+MIDI puts one semitone about 15.44 px apart; and after
 resampling, hole widths come out at 23.8 px = 2.02 mm against the trailer's
 nominal 2 mm track width.
 
@@ -253,7 +263,7 @@ nominal 2 mm track width.
 spectrum. The histogram is a comb of narrow spikes, so its harmonics are about
 as strong as its fundamental, and a roll that uses only part of its tracks —
 47 of 100 here — can easily make a harmonic win. On this roll it returned
-18.91 px, exactly half the true 37.64 px, which put 4702 of 10455 holes in the
+18.91 px, exactly half the true 37.64 px, which put 4702 of 10453 holes in the
 bad-hole pile.
 
 The spacing is knowable within a narrow band before the transform runs, from
@@ -274,17 +284,17 @@ reference analysis that ships with the repo.
 | | this roll | repo's reference roll |
 | --- | --- | --- |
 | image | 4096 × 103937 | 4096 × 164167 |
-| roll width | 3839.97 px | 3895.98 px |
-| hole separation | 37.7665 px | 37.7939 px |
-| avg hole width | 23.84 px | 20.19 px |
-| musical holes | 10455 | 11527 |
-| bad holes | 8 | 8 |
+| roll width | 3828.65 px | 3895.98 px |
+| hole separation | 37.6612 px | 37.7939 px |
+| avg hole width | 23.7 px | 20.19 px |
+| musical holes | 10453 | 11527 |
+| bad holes | 7 | 8 |
 | tears / dust | 0 / 0 ppm | 4 / 279 ppm |
 
 Four independent checks that the transcription is sound:
 
 1. Counting punch runs straight off the image gives 10353 against the parser's
-   10455 musical holes.
+   10453 musical holes.
 2. Gaps between punches within a track are bimodal with an empty valley from
    25 to 100 px (29 gaps out of 10306 fall in it). The parser's bridging
    threshold, 32.7 px, sits in that valley, so its note grouping is not a
