@@ -4,6 +4,10 @@ A reader and converter for the raster files an MRS piano-roll scanner writes:
 the monochrome `.mrs` and the colour `.mrsc`. It turns either into uncompressed
 TIFF or PNG, and can reproduce the PNG the scanner itself delivers.
 
+`mrs2roll.py` is a second tool that prepares a scan for Craig Sapp's
+[roll-image-parser](https://github.com/pianoroll/roll-image-parser); see
+[Feeding roll-image-parser](#feeding-roll-image-parser) below.
+
 The format is not documented anywhere I could find. What follows was derived by
 inspection of a single scan session, WR0225_02 of 12 April 2023 (Welte Rot,
 Schumann, *Träumerei* Op. 15, played by Alfred Grünfeld). Figures quoted are
@@ -172,6 +176,104 @@ png[x, 2097 − s, c] = floor( mrsc[x + lag[c], s, c] × Cmax / curve(s) )
 Reconstructed this way, 93–94 % of pixels come out bit-identical to the
 scanner's own PNG and no pixel differs by more than one level in 255, checked at
 forty places along the roll. `--like-png` performs exactly these steps.
+
+## Feeding roll-image-parser
+
+`tiff2holes` was written for the Stanford scans and is calibrated for them
+throughout, so the way in is to hand it an image in its own units rather than
+to retune its thresholds. It wants an uncompressed 24-bit RGB TIFF at about
+300 dpi, at least 4096 columns wide (`analyzeTrackerBarSpacing` indexes the
+first 4096 columns of the centroid histogram unconditionally), the roll running
+down the image with bass at column 0, and holes brighter than the paper.
+
+```sh
+python3 mrs2roll.py WR0225_02_….mrs --dry-run          # show the calibration
+python3 mrs2roll.py WR0225_02_….mrs roll300.tif        # ~1.2 GB for this roll
+tiff2holes -r roll300.tif > analysis.txt
+```
+
+`mrs2roll.py` resamples onto a square-pixel 300 dpi grid and centres the paper
+in a 4096-column frame. The two axes need different scale factors because MRS
+pixels are not square:
+
+- **Across**, the ruler is the roll's own tracker grid, recovered by a comb fit
+  over every hole in the scan. On WR0225_02 that gives 15.4305 px between
+  tracks; against the 3.18687 mm pitch implied by the trailer's `First Track`,
+  `Last Track` and `Number Of Tracks`, that is 4.842 px/mm ≈ 123 dpi.
+- **Along**, the transport's nominal 5 lines/mm ≈ 127 dpi. The colour scan's
+  reported `MRSC_Length` confirms it to 0.04 %, and the two rasters were shown
+  to share the step to 0.05 %.
+
+The `.rec` playtime implies 126.3 dpi instead. That route is not used: roll
+playback accelerates as the take-up spool fills, so playtime times nominal
+speed is not the scanned length.
+
+Two independent measurements say the across scale is right. The scanner's own
+MIDI puts one semitone exactly 15.43 px apart, matching the comb fit; and after
+resampling, hole widths come out at 23.8 px = 2.02 mm against the trailer's
+nominal 2 mm track width.
+
+### The one change roll-image-parser needs
+
+`analyzeTrackerBarSpacing` takes the tallest peak of the centroid histogram's
+spectrum. The histogram is a comb of narrow spikes, so its harmonics are about
+as strong as its fundamental, and a roll that uses only part of its tracks —
+47 of 100 here — can easily make a harmonic win. On this roll it returned
+18.91 px, exactly half the true 37.64 px, which put 4702 of 10456 holes in the
+bad-hole pile.
+
+The spacing is knowable within a narrow band before the transform runs, from
+the measured roll width and the roll type's track count, so the fix is to
+search only that band:
+
+```cpp
+double expected = getAverageRollWidth() / (getExpectedTrackerHoleCount() + 2.0);
+```
+
+with a ±25 % window around it. That is wide enough for every roll type the
+parser supports and far too narrow to admit a harmonic. With it the measured
+spacing is 37.82 px and the bad-hole count drops to 8, the same as the
+reference analysis that ships with the repo.
+
+### What the run produced
+
+| | this roll | repo's reference roll |
+| --- | --- | --- |
+| image | 4096 × 103937 | 4096 × 164167 |
+| roll width | 3847.01 px | 3895.98 px |
+| hole separation | 37.8236 px | 37.7939 px |
+| avg hole width | 23.84 px | 20.19 px |
+| musical holes | 10456 | 11527 |
+| bad holes | 8 | 8 |
+| tears / dust | 0 / 0 ppm | 4 / 279 ppm |
+
+Four independent checks that the transcription is sound:
+
+1. Counting punch runs straight off the image gives 10353 against the parser's
+   10456 musical holes.
+2. Gaps between punches within a track are bimodal with an empty valley from
+   25 to 100 px (29 gaps out of 10306 fall in it). The parser's bridging
+   threshold, 32.7 px, sits in that valley, so its note grouping is not a
+   judgement call.
+3. The extracted MIDI is in **F major** (Krumhansl-Kessler fit r = 0.911),
+   the right key for *Träumerei*, so the track-to-pitch mapping is anchored
+   correctly.
+4. Its pitch-class profile matches the scanner's own MIDI at r = 0.955.
+
+That last comparison also shows two things about the scanner's MIDI: it is
+transposed (its numbers are track indices, not pitches — it reads as C# major),
+and it re-attacks 1067 of 1492 consecutive same-pitch pairs within 80 ms,
+splitting the punch chains of held notes into spurious repeats. Its 1529 note
+events against the parser's 463 is that artefact, not lost detail.
+
+Two things to keep in mind. `analyzeMidiKeyMapping` anchors the track numbering
+by assuming the first track sits half a hole-separation in from the paper edge;
+on this roll it is nearer two, and the assignment is rescued afterwards by the
+rewind-hole alignment. It lands correctly here, but a roll type without a
+rewind hole would have nothing to fall back on. And `analyzeLeaders` cannot see
+this roll's leader, whose paper is the same width as the rest, so
+`LEADER_ROW` is reported as 0; the scan only carries about 79 mm of blank paper
+before the first perforation anyway.
 
 ## Lateral drift
 
