@@ -16,10 +16,13 @@ tracker-hole spacing as the across-roll ruler, and centres the paper in a
 4096-column frame.
 
 The across-roll scale is measured, not assumed: the tracker grid is recovered
-from the scan by a comb fit over every hole in the roll, which on WR0225_02
-agrees to three decimals with the semitone spacing implied by the scanner's
-own MIDI.  The along-roll scale is the transport's nominal 5 lines/mm, which
-the colour scan's reported length confirms to within 0.04 %.
+from the scan by a comb fit over every hole in the roll.  Estimators of that
+pitch spread over about 0.4 % on WR0225_02 (see the README), because the
+apparent local pitch is not quite constant across the sensor; the comb value is
+reported because it is the uniform grid that best fits every hole, and because
+nothing downstream is sensitive to the difference.  The along-roll scale is the
+transport's design step of 0.2 mm per line, which Debrunner states and the
+colour scan's reported length confirms to within 0.04 %.
 """
 
 from __future__ import annotations
@@ -164,30 +167,17 @@ def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGr
     pitch = float(fine[scores.argmax()])
     angle = np.angle(np.sum(weights * np.exp(2j * np.pi * columns / pitch)))
     phase = float((-angle / (2 * np.pi)) * pitch % pitch)
+    return TrackGrid(pitch, phase, float(scores.max()), occupied_tracks(hist, pitch, phase))
 
-    # Refine on the occupied tracks: the comb locks the period, a weighted
-    # least squares over track centres sharpens it.
-    for _ in range(6):
-        index, centre, mass = [], [], []
-        half = pitch / 2
-        for k in range(-4, int(len(hist) / pitch) + 4):
-            column = phase + pitch * k
-            lo, hi = int(column - half), int(column + half) + 1
-            if lo < 0 or hi > len(hist):
-                continue
-            window = hist[lo:hi]
-            if window.sum() < 200:
-                continue
-            index.append(k)
-            centre.append((window * np.arange(lo, hi)).sum() / window.sum())
-            mass.append(window.sum())
-        if len(index) < 4:
-            break
-        k = np.array(index, dtype=float)
-        root = np.sqrt(np.array(mass, dtype=float))
-        design = np.vstack([np.ones_like(k), k]).T * root[:, None]
-        phase, pitch = np.linalg.lstsq(design, np.array(centre) * root, rcond=None)[0]
-    return TrackGrid(float(pitch), float(phase), float(scores.max()), len(index))
+
+def occupied_tracks(hist: np.ndarray, pitch: float, phase: float) -> int:
+    """How many grid cells actually carry holes — a diagnostic, not a fit."""
+    cells = range(-4, int(len(hist) / pitch) + 4)
+    windows = (
+        hist[max(0, int(phase + pitch * k - pitch / 2)) : int(phase + pitch * k + pitch / 2) + 1]
+        for k in cells
+    )
+    return sum(1 for w in windows if w.sum() >= 200)
 
 
 def calibrate(scan: RollScan, gains, paper_max, hole_min, pitch_mm) -> Calibration:
@@ -285,7 +275,7 @@ def report(scan: RollScan, cal: Calibration, frame: Frame) -> str:
             f"track pitch   {cal.track_pitch_mm:.5f} mm (from the roll trailer)",
             f"across        {cal.across_px_per_mm:.4f} px/mm = {cal.across_dpi:.2f} dpi",
             f"along         {cal.along_px_per_mm:.4f} px/mm = {cal.along_dpi:.2f} dpi "
-            f"(nominal transport step)",
+            f"(0.2 mm/line design step)",
             f"scale         x {frame.x_scale:.5f}, y {frame.y_scale:.5f}",
             f"output        {frame.rows} rows x {frame.width} cols, "
             f"paper {b.width * frame.x_scale:.0f} px, "

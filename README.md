@@ -65,11 +65,16 @@ in `--info` output when it does:
 
 - the session's settings CSV, for `MRSC_SpatialCorrOfOneColor`, the three
   brightness-curve coefficients and `MRSC_Length`;
-- the `.rec` of the same soundtrack, for playtime and conversion speed, from
-  which the along-roll resolution of a `.mrs` is derived.
+- a sibling `.mrs`, for the `[Rolltype]` block when the input is a `.mrsc`,
+  which carries no trailer of its own.
 
-Neither is required. Without them the resolution falls back to a nominal
-127 dpi, and `--info` labels it as assumed.
+Neither is required. Without `MRSC_Length` the along-roll resolution falls back
+to the transport's 0.2 mm line step, and `--info` says so.
+
+The `.rec` route that suggests itself, `Playtime` × `ConversionSpeed`, is not
+used and would be wrong: 50 mm/s is the standard *playback* speed for
+conversion, whereas the scan itself runs at 160 mm/s (Debrunner). On WR0225_02
+it implies 126.3 dpi against the design 127.
 
 ### Interoperability with roll-image-parser
 
@@ -114,12 +119,13 @@ looks convincingly like lateral drift and is not.
 | --- | --- | --- |
 | raster | 44,507 × 2,098 × 3 | 44,000 × 2,048 × 1 |
 | chunk | 1 line, 6,294 B | 1,000 lines, 2,048,000 B |
-| header version field | `MRS Co Nr = V.1.0` | `MRS SW Nr = V.1.3` |
+| header version field | `MRS Co Nr` (Color) | `MRS SW Nr` (Schwarz-Weiss) |
 | scan number | 0000000000 | 0000007272 |
-| optics | reflective colour | backlit monochrome |
+| camera | Auflicht RGB | Durchlicht black-and-white |
 | paper band | 1,371 px | 1,570 px |
-| across | ~106 dpi | ~121 dpi |
-| along | ~127 dpi | ~126 dpi |
+| across, measured | ~106 dpi | ~121 dpi |
+| across, published | 118 dpi (0.21 mm/px) | 115 dpi (0.22 mm/px) |
+| along | 127 dpi (0.2 mm/line) | 127 dpi (0.2 mm/line) |
 | trailer | none | 1,802 bytes of INI |
 
 The across-roll figures come from the paper edges measured against
@@ -197,19 +203,47 @@ in a 4096-column frame. The two axes need different scale factors because MRS
 pixels are not square:
 
 - **Across**, the ruler is the roll's own tracker grid, recovered by a comb fit
-  over every hole in the scan. On WR0225_02 that gives 15.4305 px between
+  over every hole in the scan. On WR0225_02 that gives 15.4205 px between
   tracks; against the 3.18687 mm pitch implied by the trailer's `First Track`,
-  `Last Track` and `Number Of Tracks`, that is 4.842 px/mm ≈ 123 dpi.
-- **Along**, the transport's nominal 5 lines/mm ≈ 127 dpi. The colour scan's
-  reported `MRSC_Length` confirms it to 0.04 %, and the two rasters were shown
-  to share the step to 0.05 %.
+  `Last Track` and `Number Of Tracks`, that is 4.8388 px/mm ≈ 122.9 dpi.
+- **Along**, the transport's design step of 0.2 mm per line = 127 dpi, which
+  Debrunner states outright. The colour scan's `MRSC_Length` confirms it to
+  0.04 %, and the two rasters share the step to 0.05 %.
 
-The `.rec` playtime implies 126.3 dpi instead. That route is not used: roll
-playback accelerates as the take-up spool fills, so playtime times nominal
-speed is not the scanned length.
+How precise is that pitch? Less than the four decimals suggest. Different
+estimators on the same histogram land between about 15.39 and 15.46 px:
+
+| estimator | pitch |
+| --- | --- |
+| comb, global circular mean over all 141,162 holes | 15.4205 px |
+| zeroing the linear drift of the local grid phase | 15.3964 px |
+| weighted least squares over occupied track centres | 15.3917 px |
+| local comb in the well-populated middle windows | ~15.46 px |
+| semitone spacing from the scanner's own MIDI | ~15.44 px |
+
+They disagree because the apparent local pitch is not quite constant across the
+sensor, so no single uniform grid fits everywhere and each criterion settles on
+a different weighted average. The comb value is the one reported: it is the
+uniform grid that best fits every hole, and it needs no window parameter (the
+least-squares refinement swings 0.5 % as its window is varied, which is why it
+was dropped). The 0.4 % spread is immaterial downstream — remeasuring at
+15.3922 instead of 15.4205 moved `MUSICAL_HOLES` by one, `MUSICAL_NOTES` by one,
+and left `BAD_HOLE_COUNT` at 8.
+
+The across scale has to be measured rather than looked up. Debrunner publishes
+0.22 mm/px for the 2048-px Durchlicht camera and 0.21 mm/px for the 2098-px
+Auflicht one, but those figures are given to two significant figures, are
+internally inconsistent (25.4/0.21 = 121 dpi, not the 118 printed beside it),
+and imply the colour camera resolves finer than the black-and-white one — which
+a measurement on the same physical paper contradicts, the paper spanning
+1,569 px in the `.mrs` against 1,371 px in the `.mrsc`. The paper also says why
+no fixed figure should be expected: scan width runs 20–500 mm "je nach Adapter",
+and the calibration section describes computing each camera's
+*Abbildungsmassstab* from an adjustment strip and checking it against a
+measuring roll of known dimensions.
 
 Two independent measurements say the across scale is right. The scanner's own
-MIDI puts one semitone exactly 15.43 px apart, matching the comb fit; and after
+MIDI puts one semitone 15.44 px apart, inside the spread above; and after
 resampling, hole widths come out at 23.8 px = 2.02 mm against the trailer's
 nominal 2 mm track width.
 
@@ -219,7 +253,7 @@ nominal 2 mm track width.
 spectrum. The histogram is a comb of narrow spikes, so its harmonics are about
 as strong as its fundamental, and a roll that uses only part of its tracks —
 47 of 100 here — can easily make a harmonic win. On this roll it returned
-18.91 px, exactly half the true 37.64 px, which put 4702 of 10456 holes in the
+18.91 px, exactly half the true 37.64 px, which put 4702 of 10455 holes in the
 bad-hole pile.
 
 The spacing is knowable within a narrow band before the transform runs, from
@@ -240,17 +274,17 @@ reference analysis that ships with the repo.
 | | this roll | repo's reference roll |
 | --- | --- | --- |
 | image | 4096 × 103937 | 4096 × 164167 |
-| roll width | 3847.01 px | 3895.98 px |
-| hole separation | 37.8236 px | 37.7939 px |
+| roll width | 3839.97 px | 3895.98 px |
+| hole separation | 37.7665 px | 37.7939 px |
 | avg hole width | 23.84 px | 20.19 px |
-| musical holes | 10456 | 11527 |
+| musical holes | 10455 | 11527 |
 | bad holes | 8 | 8 |
 | tears / dust | 0 / 0 ppm | 4 / 279 ppm |
 
 Four independent checks that the transcription is sound:
 
 1. Counting punch runs straight off the image gives 10353 against the parser's
-   10456 musical holes.
+   10455 musical holes.
 2. Gaps between punches within a track are bimodal with an empty valley from
    25 to 100 px (29 gaps out of 10306 fall in it). The parser's bridging
    threshold, 32.7 px, sits in that valley, so its note grouping is not a
@@ -283,15 +317,44 @@ straightening, or that one was corrected and the other not.
 
 ## Open questions
 
-- Whether `MRS Co Nr` and `MRS SW Nr` really name the colour and monochrome
-  modules. The reading fits which file carries which, but nothing in the data
-  confirms it.
 - The last 6 % of PNG pixels, each off by one level. Probably a rounding or
   precision difference in the scanner's own arithmetic; `floor` matches better
   than `round`, but not perfectly.
-- Why the two sensors differ in across-roll resolution at all, and why neither
-  has square pixels.
-- The unit of `Spurdistanz = 1.18686868686869` in the `.dsp` file. It is exactly
-  117.5 / 99, which does not match the 3.187 mm track pitch the trailer implies.
-- Whether the chunk size is fixed per module or simply a write-buffer size that
+- Why this roll's tracks sit 1.3 % further apart relative to its paper than the
+  nominal Welte-Rot scale (99 pitches span 1,527 px inside a 1,569 px paper,
+  leaving 4.38 mm to the first track where the trailer says 6.5). The trailer
+  has `Is Replica=1`, so a recut with slightly different geometry is the most
+  likely explanation, but that is an inference from a flag and this roll cannot
+  test it. A second Welte-Rot scan with `Is Replica=0` would: if its measured
+  pitch-to-paper ratio lands on the nominal 0.009701 while this one sits at
+  0.009828, the recut story holds.
+- Why the measured across-roll resolutions sit where they do relative to the
+  published 0.22 and 0.21 mm/px, and in particular why the colour camera's
+  field of view comes out much wider than the black-and-white one's when the
+  published figures make them nearly equal.
+- Whether the chunk size is fixed per camera or simply a write-buffer size that
   could differ on other scans.
+
+Two questions that were open have since been answered by Debrunner: the header
+fields `MRS SW Nr` and `MRS Co Nr` are Schwarz-Weiss and Color, naming the two
+cameras rather than a software version; and `Spurdistanz = 1.18686868686869` in
+the `.dsp` is the *gap* between tracks, exactly the 3.186868… mm pitch minus the
+2 mm `Spurbreite`.
+
+## References
+
+- Debrunner, D. *Die Entwicklung des Musikrollenscanners der Berner
+  Fachhochschule – aus Musikrollenbildern wird Musik – die elektronische
+  Steuerung der Welte-Philharmonie-Orgel.* The scanner that produced these
+  files (`ScanOrt=Biel` in the `.dsp`). Gives the scan resolutions, the roll
+  type table including Welte-Rot at 328.5 mm and 100 tracks, the calibration
+  procedure, and names the two raw formats: "*.mrs (Bilddaten der Durchlicht
+  Schwarz-Weiss-Kamera) und *.mrsc (Bilddaten der Auflicht RGB-Kamera)".
+  PDF at `~/Zotero/storage/9PH97AGL/`.
+- SUPRA MIDI specification, <https://supra.stanford.edu/midi-spec/>. Documents
+  the analysis fields `tiff2holes` emits, and gives Stanford's along-roll
+  resolution as 300.25 dpi, measured on *their* scanner in November 2017 to
+  ±0.25 dpi. That figure belongs to the Stanford machine and should not be
+  applied to MRS scans; `LENGTH_DPI` in any analysis produced here is that
+  literal constant, not a measurement of the input.
+- roll-image-parser, <https://github.com/pianoroll/roll-image-parser>.

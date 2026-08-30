@@ -299,7 +299,8 @@ def paper_edges(scan: RollScan, line: int, gains: np.ndarray | None) -> tuple[in
     return int(dark[0]), int(dark[-1])
 
 
-DEFAULT_DPI = 127.0  # 5 lines/mm, the nominal step of both MRS sensors
+DESIGN_LINE_STEP_MM = 0.2  # Debrunner: "0,2 mm in Längsrichtung (127 dpi)"
+DEFAULT_DPI = 25.4 / DESIGN_LINE_STEP_MM
 
 
 def estimate_resolution(
@@ -309,7 +310,7 @@ def estimate_resolution(
     if length_mm:
         along = scan.geometry.lines / length_mm * 25.4
     else:
-        along, along_source = DEFAULT_DPI, "assumed"
+        along, along_source = DEFAULT_DPI, "0.2 mm/line transport step"
 
     width_mm, width_source = paper_width_mm(scan)
     if not width_mm:
@@ -335,17 +336,14 @@ def paper_width_mm(scan: RollScan) -> tuple[float | None, str]:
 
 
 def scanned_length_mm(scan: RollScan, csv_path: Path) -> tuple[float | None, str]:
-    """Physical length of this raster, from whichever sibling file records it."""
+    """Physical length of this raster, where a sibling file records it.
+
+    Only MRSC_Length measures the scan itself.  The .rec route that suggests
+    itself, Playtime x ConversionSpeed, does not: 50 mm/s is the standard
+    playback speed for conversion, while the scan runs at 160 mm/s."""
     if scan.geometry.channels == 3:
         metres = _settings_value(csv_path, "MRSC_Length")
         return (metres * 1000.0, "MRSC_Length") if metres else (None, "")
-    rec = scan.path.with_suffix(".rec")
-    if rec.exists():
-        text = rec.read_text(encoding="latin-1", errors="replace")[:2000]
-        playtime = re.search(r"^Playtime=(\d+)", text, re.M)
-        speed = re.search(r"^ConversionSpeed=([\d.]+)mm/s", text, re.M)
-        if playtime and speed:
-            return int(playtime[1]) / 1000 * float(speed[1]), "playtime x speed (.rec)"
     return None, ""
 
 
