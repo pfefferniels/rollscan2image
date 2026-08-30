@@ -69,6 +69,8 @@ class TrackGrid:
     phase: float  # column of the grid line at index 0
     coherence: float  # 0..1; how tightly the holes sit on the grid
     tracks_seen: int
+    pitch_error: float  # standard error of the pitch, in columns
+    residual: float  # rms distance of a track centre from the grid, in columns
 
 
 @dataclass(frozen=True)
@@ -207,7 +209,43 @@ def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGr
     trimmed = np.zeros_like(hist)
     trimmed[lo:hi] = hist[lo:hi]
     pitch, phase, coherence = comb_fit(trimmed, search)
-    return TrackGrid(pitch, phase, coherence, occupied_tracks(trimmed, pitch, phase))
+    error, residual = pitch_uncertainty(trimmed, pitch, phase)
+    return TrackGrid(
+        pitch, phase, coherence, occupied_tracks(trimmed, pitch, phase), error, residual
+    )
+
+
+def pitch_uncertainty(hist: np.ndarray, pitch: float, phase: float) -> tuple[float, float]:
+    """Standard error of the pitch, from how far each track centre sits off it.
+
+    The comb gives no error bar of its own, so this measures the same grid a
+    second way — one centroid per occupied cell, regressed on the integer track
+    index — and reports the scatter about that line.  A low-mass track beside a
+    much heavier one has its centroid pulled toward the neighbour, so the
+    scatter is partly the estimator's and the error bar is, if anything,
+    conservative."""
+    cells = [k for k in range(-4, int(len(hist) / pitch) + 4) if cell_mass(hist, pitch, phase, k)]
+    if len(cells) < 4:
+        return float("nan"), float("nan")
+    index = np.array(cells, dtype=float)
+    centre = np.array([cell_centroid(hist, pitch, phase, k) for k in cells])
+    mass = np.array([cell_mass(hist, pitch, phase, k) for k in cells])
+    root = np.sqrt(mass)
+    design = np.vstack([np.ones_like(index), index]).T * root[:, None]
+    offset, slope = np.linalg.lstsq(design, centre * root, rcond=None)[0]
+    residual = centre - (offset + slope * index)
+    n = len(index)
+    weight = mass / mass.sum()
+    spread = (weight * (index - (weight * index).sum()) ** 2).sum() * n
+    variance = (weight * residual**2).sum() * n / (n - 2)
+    return float(np.sqrt(variance / spread)), float(np.sqrt((weight * residual**2).sum()))
+
+
+def cell_centroid(hist: np.ndarray, pitch: float, phase: float, k: int) -> float:
+    centre = phase + pitch * k
+    lo, hi = int(centre - pitch / 2), int(centre + pitch / 2) + 1
+    window = hist[lo:hi]
+    return float((window * np.arange(lo, hi)).sum() / window.sum())
 
 
 def occupied_tracks(hist: np.ndarray, pitch: float, phase: float) -> int:
@@ -310,10 +348,13 @@ def report(scan: RollScan, cal: Calibration, frame: Frame) -> str:
         [
             f"source        {scan.geometry.lines} lines x {scan.geometry.samples} samples",
             f"paper band    columns {b.left}..{b.right} ({b.width} px), wander {b.wander} px",
-            f"tracker grid  pitch {g.pitch:.4f} px, coherence {g.coherence:.3f}, "
-            f"{g.tracks_seen} tracks occupied",
-            f"track pitch   {cal.track_pitch_mm:.5f} mm (from the roll trailer)",
-            f"across        {cal.across_px_per_mm:.4f} px/mm = {cal.across_dpi:.2f} dpi",
+            f"tracker grid  pitch {g.pitch:.3f} +/- {g.pitch_error:.3f} px, "
+            f"coherence {g.coherence:.3f}, {g.tracks_seen} tracks occupied, "
+            f"grid residual {g.residual:.2f} px",
+            f"track pitch   {cal.track_pitch_mm:.5f} mm (nominal, from the roll trailer)",
+            f"across        {cal.across_px_per_mm:.3f} px/mm = {cal.across_dpi:.1f} dpi "
+            f"(+/- {cal.across_dpi * g.pitch_error / g.pitch:.1f} from the pitch alone; "
+            f"the nominal mm above is the larger unknown)",
             f"along         {cal.along_px_per_mm:.4f} px/mm = {cal.along_dpi:.2f} dpi "
             f"(0.2 mm/line design step)",
             f"scale         x {frame.x_scale:.5f}, y {frame.y_scale:.5f}",

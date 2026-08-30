@@ -203,9 +203,9 @@ in a 4096-column frame. The two axes need different scale factors because MRS
 pixels are not square:
 
 - **Across**, the ruler is the roll's own tracker grid, recovered by a comb fit
-  over the tracks the roll plays. On WR0225_02 that gives 15.4664 px between
+  over the tracks the roll plays. On WR0225_02 that gives 15.466 ± 0.009 px between
   tracks; against the 3.18687 mm pitch implied by the trailer's `First Track`,
-  `Last Track` and `Number Of Tracks`, that is 4.8532 px/mm ≈ 123.3 dpi.
+  `Last Track` and `Number Of Tracks`, that is 4.853 px/mm ≈ 123.3 dpi.
 - **Along**, the transport's design step of 0.2 mm per line = 127 dpi, which
   Debrunner states outright. The colour scan's `MRSC_Length` confirms it to
   0.04 %, and the two rasters share the step to 0.05 %.
@@ -214,31 +214,52 @@ A roll only pins down the grid where it plays. This one uses 37 tracks
 spanning columns 577-1303 of a 1,569 px paper, and the perforations outside that
 compass — two groups near each paper edge, present the whole length of the roll —
 do not sit on the note grid: against a grid fitted to the played tracks they land
-0.41 to 0.49 of a pitch off, and the two treble groups deviate in *opposite*
-directions only three pitches apart, which no smooth optical distortion could
+0.39 to 0.49 of a pitch off, and the two treble groups deviate in *opposite*
+directions about five pitches apart, which no smooth optical distortion could
 produce. Left in, they drag the comb 0.3 % low. So the pitch is measured, then
 remeasured over the longest unbroken run of played tracks:
 
-| estimator | pitch | coherence |
+| estimator | pitch | |
 | --- | --- | --- |
-| comb over the whole paper | 15.4205 px | 0.807 |
-| comb over the played compass (used) | 15.4664 px | 0.879 |
-| integer grid fit to 31 played track centres | 15.4682 px | rms 0.05 pitch |
-| least squares over all track centres | 15.3917 px | |
-| zeroing the linear drift of the grid phase | 15.3964 px | |
+| comb over the whole paper | 15.420 px | coherence 0.807 |
+| comb over the played compass (used) | 15.466 px | coherence 0.879 |
+| integer grid fit to the played track centres | 15.467 px | rms 0.48 px |
+| least squares over all track centres | 15.392 px | |
+| zeroing the linear drift of the grid phase | 15.396 px | |
 
-The two independent measurements restricted to the played compass agree to
-0.01 %. The three that include the edge groups sit 0.3-0.5 % low, and the
-apparent 1.9 % "arch" in local pitch across the sensor is the same artefact seen
-another way: the windows carrying it hold four to seven tracks each, and a
-handful of tracks separated by large empty gaps can be fitted at many periods.
-Restricted to windows with at least eight occupied tracks the spread is 0.46 %.
+**That table is method spread, not uncertainty.** All of these rest on the same
+32 track centres, so the agreement between the middle two measures consistency
+of method, not precision of measurement. Propagating the scatter about the
+fitted line through the regression gives the actual figure:
 
-None of this matters much downstream — remeasuring from 15.3922 to 15.4664 moved
+```
+pitch  15.466 ± 0.009 px   (0.06 %, 32 tracks over an index span of 46)
+```
+
+which the tool prints. Three of the residuals are low-mass tracks sitting beside
+much heavier ones, each pulled *toward* the heavy neighbour — centroid
+contamination rather than misplaced tracks — so the error bar is if anything
+conservative. Dropping them moves the pitch by 0.009 %.
+
+The estimators that include the edge groups sit 0.3-0.5 % low, and the apparent
+1.9 % "arch" in local pitch across the sensor is the same artefact seen another
+way: the windows carrying it hold four to seven tracks each, and a handful of
+tracks separated by large empty gaps can be fitted at many periods. Restricted
+to windows with at least eight occupied tracks the spread is 0.46 %, and their
+mass-weighted mean is 15.469.
+
+None of this matters downstream — remeasuring from 15.392 to 15.466 moved
 `MUSICAL_HOLES` by two, `MUSICAL_NOTES` by one, and `BAD_HOLE_COUNT` from 8 to 7
-— but the played-compass value is the one with two independent methods behind it.
-Whether the grid is genuinely uniform out to the paper edges this roll cannot
-say, since it never plays there; that needs a roll using its full compass.
+— and the ± 0.06 % is a third of the smallest change that moved anything at all.
+Whether the grid stays uniform out to the paper edges this roll cannot say,
+since it never plays there; that needs a roll using its full compass.
+
+One caveat on reading 123.3 dpi as an absolute figure. The ± 0.06 % is the
+repeatability of the *pixel* measurement. Turning it into dpi multiplies by the
+nominal 3.18687 mm track pitch from the roll-type table, and this roll is known
+to depart from that scale — its pitch-to-paper ratio is 1.3 % off nominal. So
+the across-roll dpi is good to about a percent, not to 0.07 dpi, and the digits
+past 123 carry the nominal assumption rather than the measurement.
 
 The across scale has to be measured rather than looked up. Debrunner publishes
 0.22 mm/px for the 2048-px Durchlicht camera and 0.21 mm/px for the 2098-px
