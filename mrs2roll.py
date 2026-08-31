@@ -16,13 +16,12 @@ tracker-hole spacing as the across-roll ruler, and centres the paper in a
 4096-column frame.
 
 The across-roll scale is measured, not assumed: the tracker grid is recovered
-from the scan by a comb fit over every hole in the roll.  Estimators of that
-pitch spread over about 0.4 % on WR0225_02 (see the README), because the
-apparent local pitch is not quite constant across the sensor; the comb value is
-reported because it is the uniform grid that best fits every hole, and because
-nothing downstream is sensitive to the difference.  The along-roll scale is the
-transport's design step of 0.2 mm per line, which Debrunner states and the
-colour scan's reported length confirms to within 0.04 %.
+from the scan by a comb fit over the holes, restricted to the compass the roll
+actually plays.  Perforations outside it — the groups near each paper edge on
+WR0225_02 — do not sit on the note grid and drag the comb about 0.3 % low (see
+the README).  The along-roll scale is the transport's design step of 0.2 mm per
+line, which Debrunner states and the colour scan's reported length confirms to
+within 0.04 %.
 """
 
 from __future__ import annotations
@@ -180,9 +179,7 @@ def played_compass(hist: np.ndarray, pitch: float, phase: float) -> tuple[int, i
     A roll only pins down the grid where it uses it.  Perforations far outside
     the played compass — the edge groups on this Welte roll — sit off the note
     grid and drag the comb low, so the pitch is remeasured over this range."""
-    cells = np.array(
-        [k for k in range(-4, int(len(hist) / pitch) + 4) if cell_mass(hist, pitch, phase, k)]
-    )
+    cells = np.array(occupied_cells(hist, pitch, phase))
     if len(cells) < 4:
         return 0, len(hist)
     breaks = np.flatnonzero(np.diff(cells) > MAX_UNUSED_RUN + 1)
@@ -203,6 +200,11 @@ def cell_mass(hist: np.ndarray, pitch: float, phase: float, k: int) -> float:
     return total if total >= 200 else 0.0
 
 
+def occupied_cells(hist: np.ndarray, pitch: float, phase: float) -> list[int]:
+    """The grid cells that carry holes, in track-index order."""
+    return [k for k in range(-4, int(len(hist) / pitch) + 4) if cell_mass(hist, pitch, phase, k)]
+
+
 def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGrid:
     pitch, phase, _ = comb_fit(hist, search)
     lo, hi = played_compass(hist, pitch, phase)
@@ -211,7 +213,12 @@ def measure_track_grid(hist: np.ndarray, search: tuple[float, float]) -> TrackGr
     pitch, phase, coherence = comb_fit(trimmed, search)
     error, residual = pitch_uncertainty(trimmed, pitch, phase)
     return TrackGrid(
-        pitch, phase, coherence, occupied_tracks(trimmed, pitch, phase), error, residual
+        pitch,
+        phase,
+        coherence,
+        len(occupied_cells(trimmed, pitch, phase)),
+        error,
+        residual,
     )
 
 
@@ -224,7 +231,7 @@ def pitch_uncertainty(hist: np.ndarray, pitch: float, phase: float) -> tuple[flo
     much heavier one has its centroid pulled toward the neighbour, so the
     scatter is partly the estimator's and the error bar is, if anything,
     conservative."""
-    cells = [k for k in range(-4, int(len(hist) / pitch) + 4) if cell_mass(hist, pitch, phase, k)]
+    cells = occupied_cells(hist, pitch, phase)
     if len(cells) < 4:
         return float("nan"), float("nan")
     index = np.array(cells, dtype=float)
@@ -246,16 +253,6 @@ def cell_centroid(hist: np.ndarray, pitch: float, phase: float, k: int) -> float
     lo, hi = int(centre - pitch / 2), int(centre + pitch / 2) + 1
     window = hist[lo:hi]
     return float((window * np.arange(lo, hi)).sum() / window.sum())
-
-
-def occupied_tracks(hist: np.ndarray, pitch: float, phase: float) -> int:
-    """How many grid cells actually carry holes — a diagnostic, not a fit."""
-    cells = range(-4, int(len(hist) / pitch) + 4)
-    windows = (
-        hist[max(0, int(phase + pitch * k - pitch / 2)) : int(phase + pitch * k + pitch / 2) + 1]
-        for k in cells
-    )
-    return sum(1 for w in windows if w.sum() >= 200)
 
 
 def calibrate(scan: RollScan, gains, paper_max, hole_min, pitch_mm) -> Calibration:
