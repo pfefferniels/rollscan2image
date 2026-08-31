@@ -439,12 +439,6 @@ is a different thing: fixed in the sensor, the same on every line.
 - Whether the chunk size is fixed per camera or simply a write-buffer size that
   could differ on other scans.
 
-Two questions that were open have since been answered by Debrunner: the header
-fields `MRS SW Nr` and `MRS Co Nr` are Schwarz-Weiss and Color, naming the two
-cameras rather than a software version; and `Spurdistanz = 1.18686868686869` in
-the `.dsp` is the *gap* between tracks, exactly the 3.186868… mm pitch minus the
-2 mm `Spurbreite`.
-
 ## References
 
 - Debrunner, D. *Die Entwicklung des Musikrollenscanners der Berner
