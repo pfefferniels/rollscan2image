@@ -130,8 +130,10 @@ looks convincingly like lateral drift and is not.
 
 The across-roll figures come from the paper edges measured against
 `Roll Width = 328.5` in the trailer. A second estimate from the track pitch
-(100 tracks between 6.5 mm and 322 mm) agrees within about one percent. Pixels
-are not square in either file, and noticeably less so in the colour one.
+(100 tracks between 6.5 mm and 322 mm) gives 123.3 dpi for the `.mrs`, 1.6 %
+higher. That gap is this roll's own departure from the nominal track scale, an
+open question below. Pixels are not square in either file, and noticeably less
+so in the colour one.
 
 The two are separate rasters of the same roll in the same session, neither
 derived from the other. Matching note patterns across them gives
@@ -210,12 +212,12 @@ pixels are not square:
   Debrunner states outright. The colour scan's `MRSC_Length` confirms it to
   0.04 %, and the two rasters share the step to 0.05 %.
 
-A roll only pins down the grid where it plays. This one uses 37 tracks
+A roll only pins down the grid where it plays. This one uses 33 tracks
 spanning columns 577-1303 of a 1,569 px paper, and the perforations outside that
 compass — two groups near each paper edge, present the whole length of the roll —
 do not sit on the note grid: against a grid fitted to the played tracks they land
-0.39 to 0.49 of a pitch off, and the two treble groups deviate in *opposite*
-directions about five pitches apart, which no smooth optical distortion could
+0.39 to 0.50 of a pitch off, and the two treble groups deviate in *opposite*
+directions about four pitches apart, which no smooth optical distortion could
 produce. Left in, they drag the comb 0.3 % low. So the pitch is measured, then
 remeasured over the longest unbroken run of played tracks:
 
@@ -223,17 +225,17 @@ remeasured over the longest unbroken run of played tracks:
 | --- | --- | --- |
 | comb over the whole paper | 15.420 px | coherence 0.807 |
 | comb over the played compass (used) | 15.466 px | coherence 0.879 |
-| integer grid fit to the played track centres | 15.467 px | rms 0.48 px |
+| integer grid fit to the played track centres | 15.466 px | rms 0.49 px |
 | least squares over all track centres | 15.392 px | |
 | zeroing the linear drift of the grid phase | 15.396 px | |
 
 **That table is method spread, not uncertainty.** All of these rest on the same
-32 track centres, so the agreement between the middle two measures consistency
+33 track centres, so the agreement between the middle two measures consistency
 of method, not precision of measurement. Propagating the scatter about the
 fitted line through the regression gives the actual figure:
 
 ```
-pitch  15.466 ± 0.009 px   (0.06 %, 32 tracks over an index span of 46)
+pitch  15.466 ± 0.009 px   (0.06 %, 33 tracks over an index span of 46)
 ```
 
 which the tool prints. Three of the residuals are low-mass tracks sitting beside
@@ -257,7 +259,7 @@ since it never plays there; that needs a roll using its full compass.
 One caveat on reading 123.3 dpi as an absolute figure. The ± 0.06 % is the
 repeatability of the *pixel* measurement. Turning it into dpi multiplies by the
 nominal 3.18687 mm track pitch from the roll-type table, and this roll is known
-to depart from that scale — its pitch-to-paper ratio is 1.3 % off nominal. So
+to depart from that scale — its pitch-to-paper ratio is 1.6 % off nominal. So
 the across-roll dpi is good to about a percent, not to 0.07 dpi, and the digits
 past 123 carry the nominal assumption rather than the measurement.
 
@@ -275,7 +277,7 @@ measuring roll of known dimensions.
 
 Two independent measurements say the across scale is right. The scanner's own
 MIDI puts one semitone about 15.44 px apart; and after
-resampling, hole widths come out at 23.8 px = 2.02 mm against the trailer's
+resampling, hole widths come out at 23.7 px = 2.01 mm against the trailer's
 nominal 2 mm track width.
 
 ### The one change roll-image-parser needs
@@ -283,9 +285,10 @@ nominal 2 mm track width.
 `analyzeTrackerBarSpacing` takes the tallest peak of the centroid histogram's
 spectrum. The histogram is a comb of narrow spikes, so its harmonics are about
 as strong as its fundamental, and a roll that uses only part of its tracks —
-47 of 100 here — can easily make a harmonic win. On this roll it returned
-18.91 px, exactly half the true 37.64 px, which put 4702 of 10453 holes in the
-bad-hole pile.
+47 of 100 by the parser's own census, which counts the edge groups and tracks
+carrying a handful of holes — can easily make a harmonic win. On this roll it
+returned 18.91 px, exactly half the true 37.64 px, which put 4702 of 10453 holes
+in the bad-hole pile.
 
 The spacing is knowable within a narrow band before the transform runs, from
 the measured roll width and the roll type's track count, so the fix is to
@@ -297,7 +300,7 @@ double expected = getAverageRollWidth() / (getExpectedTrackerHoleCount() + 2.0);
 
 with a ±25 % window around it. That is wide enough for every roll type the
 parser supports and far too narrow to admit a harmonic. With it the measured
-spacing is 37.82 px and the bad-hole count drops to 8, the same as the
+spacing is 37.66 px and the bad-hole count drops to 7, one below the 8 of the
 reference analysis that ships with the repo.
 
 ### What the run produced
@@ -318,7 +321,7 @@ Four independent checks that the transcription is sound:
    10453 musical holes.
 2. Gaps between punches within a track are bimodal with an empty valley from
    25 to 100 px (29 gaps out of 10306 fall in it). The parser's bridging
-   threshold, 32.7 px, sits in that valley, so its note grouping is not a
+   threshold, 32.5 px, sits in that valley, so its note grouping is not a
    judgement call.
 3. The extracted MIDI is in **F major** (Krumhansl-Kessler fit r = 0.911),
    the right key for *Träumerei*, so the track-to-pitch mapping is anchored
@@ -351,14 +354,14 @@ straightening, or that one was corrected and the other not.
 - The last 6 % of PNG pixels, each off by one level. Probably a rounding or
   precision difference in the scanner's own arithmetic; `floor` matches better
   than `round`, but not perfectly.
-- Why this roll's tracks sit 1.3 % further apart relative to its paper than the
-  nominal Welte-Rot scale (99 pitches span 1,527 px inside a 1,569 px paper,
-  leaving 4.38 mm to the first track where the trailer says 6.5). The trailer
+- Why this roll's tracks sit 1.6 % further apart relative to its paper than the
+  nominal Welte-Rot scale (99 pitches span 1,531 px inside a 1,569 px paper,
+  leaving 3.9 mm to the first track where the trailer says 6.5). The trailer
   has `Is Replica=1`, so a recut with slightly different geometry is the most
   likely explanation, but that is an inference from a flag and this roll cannot
   test it. A second Welte-Rot scan with `Is Replica=0` would: if its measured
   pitch-to-paper ratio lands on the nominal 0.009701 while this one sits at
-  0.009828, the recut story holds.
+  0.009857, the recut story holds.
 - Why the measured across-roll resolutions sit where they do relative to the
   published 0.22 and 0.21 mm/px, and in particular why the colour camera's
   field of view comes out much wider than the black-and-white one's when the
