@@ -197,6 +197,8 @@ down the image with bass at column 0, and holes brighter than the paper.
 ```sh
 python3 mrs2roll.py WR0225_02_….mrs --dry-run          # show the calibration
 python3 mrs2roll.py WR0225_02_….mrs roll300.tif        # ~1.2 GB for this roll
+python3 mrs2roll.py WR0225_02_….mrs roll300.tif --no-straighten   # leave the
+                                                      # across-roll bend in
 tiff2holes -r roll300.tif > analysis.txt
 ```
 
@@ -215,11 +217,9 @@ pixels are not square:
 A roll only pins down the grid where it plays. This one uses 33 tracks
 spanning columns 577-1303 of a 1,569 px paper, and the perforations outside that
 compass — two groups near each paper edge, present the whole length of the roll —
-do not sit on the note grid: against a grid fitted to the played tracks they land
-0.39 to 0.50 of a pitch off, and the two treble groups deviate in *opposite*
-directions about four pitches apart, which no smooth optical distortion could
-produce. Left in, they drag the comb 0.3 % low. So the pitch is measured, then
-remeasured over the longest unbroken run of played tracks:
+land 0.39 to 0.50 of a pitch off a *straight* grid fitted to the played tracks.
+Left in, they drag the comb 0.3 % low. So the pitch is measured, then remeasured
+over the longest unbroken run of played tracks:
 
 | estimator | pitch | |
 | --- | --- | --- |
@@ -253,15 +253,18 @@ mass-weighted mean is 15.469.
 None of this matters downstream — remeasuring from 15.392 to 15.466 moved
 `MUSICAL_HOLES` by two, `MUSICAL_NOTES` by one, and `BAD_HOLE_COUNT` from 8 to 7
 — and the ± 0.06 % is a third of the smallest change that moved anything at all.
-Whether the grid stays uniform out to the paper edges this roll cannot say,
-since it never plays there; that needs a roll using its full compass.
+Whether the grid stays uniform out to the paper edges is a separate question, and
+the answer is no; see [Straightening the across axis](#straightening-the-across-axis).
 
 One caveat on reading 123.3 dpi as an absolute figure. The ± 0.06 % is the
 repeatability of the *pixel* measurement. Turning it into dpi multiplies by the
-nominal 3.18687 mm track pitch from the roll-type table, and this roll is known
-to depart from that scale — its pitch-to-paper ratio is 1.6 % off nominal. So
-the across-roll dpi is good to about a percent, not to 0.07 dpi, and the digits
-past 123 carry the nominal assumption rather than the measurement.
+nominal 3.18687 mm track pitch from the roll-type table, and the pitch-to-paper
+ratio measured here is 1.6 % off that nominal. Straightening the across axis
+accounts for something over half of the gap, since the played tracks sit where
+the magnification is highest and the paper edges where it is lowest; what is left
+is the roll's own departure from nominal, the paper edges, or both. So the
+across-roll dpi is good to about a percent, not to 0.07 dpi, and the digits past
+123 carry the nominal assumption rather than the measurement.
 
 The across scale has to be measured rather than looked up. Debrunner publishes
 0.22 mm/px for the 2048-px Durchlicht camera and 0.21 mm/px for the 2098-px
@@ -279,6 +282,66 @@ Two independent measurements say the across scale is right. The scanner's own
 MIDI puts one semitone about 15.44 px apart; and after
 resampling, hole widths come out at 23.7 px = 2.01 mm against the trailer's
 nominal 2 mm track width.
+
+### Straightening the across axis
+
+The camera's tracker columns do not lie on a straight line. Fitting the roll's
+own column centres against their integer track indices, a straight grid leaves an
+rms of 1.18 px on a 15.49 px pitch, with a residual that is systematic rather than
+scattered; adding a cubic term drops it to 0.46 px:
+
+```
+straight grid   pitch 15.3906 px   rms 1.18 px
+cubic           pitch 15.4872 px   rms 0.46 px   k3 -2.166e-08 /px^2 about column 979
+```
+
+The cubic is odd about the middle of the sensor, which is what radial distortion
+looks like, and it displaces the tracks by +0.60 of a pitch at the bass paper edge
+and −0.75 at the treble edge. It holds steady over the length of the roll, so it
+is a property of the camera and not of the paper:
+
+| | k3 | pitch | edge shift |
+| --- | --- | --- | --- |
+| first third | −2.157e−08 | 15.487 px | +0.60, −0.76 |
+| middle third | −2.267e−08 | 15.486 px | +0.69, −0.73 |
+| last third | −2.136e−08 | 15.498 px | +0.55, −0.79 |
+| whole roll (used) | −2.166e−08 | 15.487 px | +0.60, −0.75 |
+
+Half a pitch is enough to matter. roll-image-parser fits one straight grid to the
+whole width, phase-locked to the busiest column, so it lands on the notes and
+misses the expression tracks at both edges. On WR0225_02 it read the treble
+expression one tracker hole low: 103 crescendo-ons and no crescendo-off at all,
+which no Welte roll can contain, and 61 forzando-offs the roll does not have. A
+Stanford scan of another copy of the same roll (DRUID `mf320jq4997`), whose grid
+is straight, reads a balanced crescendo pair there. Straightened, this scan reads
+the same seven treble controls that copy does:
+
+| treble control | before | straightened | Stanford copy |
+| --- | --- | --- | --- |
+| 104 Rewind | 7 | 7 | 26 |
+| 106 Sustain-On | 95 | 85 | 90 |
+| 107 Sustain-Off | 74 | 84 | 88 |
+| 108 Forzando-On | 3 | 3 | 6 |
+| 109 Forzando-Off | 61 | 1 | 4 |
+| 110 Crescendo-On | 103 | 81 | 99 |
+| 111 Crescendo-Off | — | 82 | 103 |
+
+The bass expression was smeared the same way, its three inner columns of 37, 31
+and 3 holes read as 21, 41 and 9; straightened they come out 37, 31 and 3. The
+note tracks were never affected, and their MIDI key numbers are unchanged.
+
+`measure_barrel` fits this from the roll's own columns on every run. A roll is its
+own and only ruler here, so the fit is skipped, with a line in the report saying
+so, unless the roll punches within a quarter of the paper width of both edges;
+one that keeps to the middle cannot measure the ends, and a cubic extrapolated
+from the middle would do harm. `--no-straighten` turns it off.
+
+Two caveats. This is one roll from one session, so whether `k3` is the same
+constant for every scan from this machine is untested, and the tool remeasures it
+per roll rather than assuming so. And a cubic is the first term of a radial model,
+not the whole of it; it takes the track centres from 1.18 px off a straight grid
+to 0.46 px, which is the same order as the Stanford scans manage, but the residual
+that remains has not been chased further.
 
 ### The one change roll-image-parser needs
 
@@ -308,12 +371,16 @@ reference analysis that ships with the repo.
 | | this roll | repo's reference roll |
 | --- | --- | --- |
 | image | 4096 × 103937 | 4096 × 164167 |
-| roll width | 3828.65 px | 3895.98 px |
+| roll width | 3877.10 px | 3895.98 px |
 | hole separation | 37.6612 px | 37.7939 px |
-| avg hole width | 23.7 px | 20.19 px |
-| musical holes | 10453 | 11527 |
-| bad holes | 7 | 8 |
+| avg hole width | 23.77 px | 20.19 px |
+| musical holes | 10456 | 11527 |
+| bad holes | 8 | 8 |
 | tears / dust | 0 / 0 ppm | 4 / 279 ppm |
+
+Those are the figures after straightening. Unstraightened the same run gives a
+roll width of 3828.65 px, 10453 musical holes and 7 bad holes; the paper measures
+wider once the camera's inward bend at the edges is undone.
 
 Four independent checks that the transcription is sound:
 
@@ -346,8 +413,10 @@ before the first perforation anyway.
 ## Lateral drift
 
 None that I can measure. The paper edges hold to within ±2 px over all 44,000
-lines in both files, so there is no evidence that either raster needs
-straightening, or that one was corrected and the other not.
+lines in both files, so there is no evidence that either raster drifts sideways
+as it goes, or that one was corrected and the other not. The across-roll
+distortion described under [Feeding roll-image-parser](#feeding-roll-image-parser)
+is a different thing: fixed in the sensor, the same on every line.
 
 ## Open questions
 
@@ -356,12 +425,13 @@ straightening, or that one was corrected and the other not.
   than `round`, but not perfectly.
 - Why this roll's tracks sit 1.6 % further apart relative to its paper than the
   nominal Welte-Rot scale (99 pitches span 1,531 px inside a 1,569 px paper,
-  leaving 3.9 mm to the first track where the trailer says 6.5). The trailer
-  has `Is Replica=1`, so a recut with slightly different geometry is the most
-  likely explanation, but that is an inference from a flag and this roll cannot
-  test it. A second Welte-Rot scan with `Is Replica=0` would: if its measured
-  pitch-to-paper ratio lands on the nominal 0.009701 while this one sits at
-  0.009857, the recut story holds.
+  leaving 3.9 mm to the first track where the trailer says 6.5). Undoing the
+  camera's across-roll distortion takes something over half of this out, since
+  the pitch is measured where the magnification is highest and the paper edges
+  sit where it is lowest. What remains may be the roll: the trailer has
+  `Is Replica=1`, so a recut with slightly different geometry would explain it,
+  though that is an inference from a flag and this roll cannot test it. A second
+  Welte-Rot scan with `Is Replica=0`, straightened the same way, would.
 - Why the measured across-roll resolutions sit where they do relative to the
   published 0.22 and 0.21 mm/px, and in particular why the colour camera's
   field of view comes out much wider than the black-and-white one's when the
