@@ -158,22 +158,27 @@ def find_paper_band(scan: RollScan, gains, paper_max) -> PaperBand:
     return PaperBand(int(np.median(lefts)), int(np.median(rights)), wander)
 
 
+def add_run_centres(hist: np.ndarray, mask: np.ndarray) -> None:
+    """Add one count per run of open pixels in each line of `mask`, at its centre."""
+    width = mask.shape[1]
+    padded = np.zeros((mask.shape[0], width + 2), dtype=bool)
+    padded[:, 1:-1] = mask
+    edge = np.diff(padded.astype(np.int8), axis=1)
+    _, opens = np.nonzero(edge == 1)
+    _, closes = np.nonzero(edge == -1)
+    np.add.at(hist, np.rint((opens + closes - 1) / 2).astype(int), 1)
+
+
 def hole_histogram(scan: RollScan, band: PaperBand, gains, hole_min) -> np.ndarray:
     """How often a hole's across-roll centre falls in each column."""
-    width = scan.geometry.samples
-    hist = np.zeros(width)
+    hist = np.zeros(scan.geometry.samples)
     inset = 4
     for start in range(0, scan.geometry.lines, BLOCK_ROWS):
         stop = min(start + BLOCK_ROWS, scan.geometry.lines)
         mask = _hole_mask(scan.lines(start, stop), gains, hole_min)
         mask[:, : band.left + inset] = False
         mask[:, band.right - inset :] = False
-        padded = np.zeros((mask.shape[0], width + 2), dtype=bool)
-        padded[:, 1:-1] = mask
-        edge = np.diff(padded.astype(np.int8), axis=1)
-        _, opens = np.nonzero(edge == 1)
-        _, closes = np.nonzero(edge == -1)
-        np.add.at(hist, np.rint((opens + closes - 1) / 2).astype(int), 1)
+        add_run_centres(hist, mask)
     return hist
 
 
