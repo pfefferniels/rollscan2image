@@ -1,16 +1,18 @@
-# mrs2image
+# rollscan2image
 
-A reader and converter for the raster files an MRS piano-roll scanner writes:
-the monochrome `.mrs` and the colour `.mrsc`. It turns either into uncompressed
-TIFF or PNG, and can reproduce the PNG the scanner itself delivers.
+Readers and converters for the files piano-roll scanners write, turning them
+into TIFF or PNG.
 
-`mrs2roll.py` is a second tool that prepares a scan for Craig Sapp's
+`mrs2image.py` reads the raster files of an MRS scanner, the monochrome `.mrs`
+and the colour `.mrsc`, and can reproduce the PNG the scanner itself delivers.
+`mrs2roll.py` prepares such a scan for Craig Sapp's
 [roll-image-parser](https://github.com/pianoroll/roll-image-parser); see
 [Feeding roll-image-parser](#feeding-roll-image-parser) below. `cis2image.py`
 reads a different scanner's files, the run-length coded `.CIS` of the
-rollscanners group; see [CIS files](#cis-files).
+rollscanners group; see [CIS files](#cis-files). Most of what follows concerns
+the MRS format.
 
-The format is not documented anywhere I could find. What follows was derived by
+The MRS format is not documented anywhere I could find. What follows was derived by
 inspection of a single scan session, WR0225_02 of 12 April 2023 (Welte Rot,
 Schumann, *Träumerei* Op. 15, played by Alfred Grünfeld). Figures quoted are
 measurements from that session and may not hold for other rolls or scanner
