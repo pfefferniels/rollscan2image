@@ -578,11 +578,18 @@ so no straightening is called for; the CIS sensor shows nothing like the MRS
 camera's across-roll bend. The extracted MIDI runs C1–G7 with expression on 16–20
 and 109–113, which is the Welte 80-note compass inside the T-98's 98 tracks.
 
-Read `MUSICAL_NOTES` with the trailer in mind. Of the 1103, 360 fall past the
-start of the rewind slot and belong to the test section described below rather
-than to anything the piano plays, leaving **743 played notes**. The MRS scan of the same
-performance on the red Welte gives 736 by a different pipeline on a different
-roll format, which is the closest thing to an external check available here.
+Read `MUSICAL_NOTES` with the trailer in mind. The 1103 counts everything the
+paper carries, the rewind slot and the test section included. What the piano
+plays is the 742 chains beginning before row 82462, where the rewind slot starts:
+**464 notes, 185 bass valve chains and 93 treble**. The cut is exclusive of that
+row, and has to be — the rewind chain's own attack sits exactly on it.
+
+The red Welte copy of the same performance gives the external check, and on notes
+the two agree to within one: 463 of the green's 464 note onsets match a red onset,
+leaving a single green note with no counterpart, over an alignment whose residual
+stays inside ±0.64 mm along the whole roll. Measured in the roll-desk edition, not
+here. Comparing the two `MUSICAL_NOTES` totals instead would mislead, since each
+includes its own post-performance marks and only the green has a test section.
 
 On playback speed the roll speaks for itself: it wants `setTPQ(420)`. Welte's
 printed "tempo" is roughly feet per minute times ten, the CIS header records
@@ -663,8 +670,9 @@ whole working set, skipping the eight note positions outside the 80-note compass
 which is what a pattern meant to exercise every pneumatic should cover. A 2.3 in
 chain on the track at MIDI 108 sits in the same tail, 5 in ahead of it.
 
-None of that is music, and the parser counts it: 360 of the 1103 `MUSICAL_NOTES`,
-four on each note track, and `LAST_HOLE` runs to the end of the section. Whether
+None of that is music, and the parser counts it: the tail accounts for 361 of the
+1103 `MUSICAL_NOTES`, four on each note track, and `LAST_HOLE` runs to the end of
+the section. Whether
 to keep it is a judgement for whoever reads the analysis — it is a genuine part of
 the roll, just not part of the performance. Neither of the two original rolls
 above carries one, and on 3414 hole 93 is empty throughout, so a test section is
