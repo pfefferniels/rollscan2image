@@ -418,7 +418,9 @@ def resample(scan: RollScan, frame: Frame, gains, barrel, out: np.ndarray) -> No
     for first in range(0, frame.rows, BLOCK_ROWS):
         last = min(first + BLOCK_ROWS, frame.rows)
         top = first / frame.y_scale
-        bottom = last / frame.y_scale
+        # rounding the row count up can put the last block a fraction of a
+        # line past the scan, which PIL refuses
+        bottom = min(last / frame.y_scale, scan.geometry.lines)
         src0 = max(0, int(np.floor(top)) - 2)
         src1 = min(scan.geometry.lines, int(np.ceil(bottom)) + 2)
         block = scan.lines(src0, src1).mean(axis=2)
