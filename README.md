@@ -584,15 +584,25 @@ than to anything the piano plays, leaving **743 played notes**. The MRS scan of 
 performance on the red Welte gives 736 by a different pipeline on a different
 roll format, which is the closest thing to an external check available here.
 
-That pair also fixes the playback speed. The same music occupies 253.2 in of
-green paper against 342.5 in of red, a ratio of 1.3527. Welte's printed "tempo"
-is roughly feet per minute times ten, so if this roll is tempo 70 — as its CIS
-header records, and as Welte's own Skala-Rolle 98 booklet is calibrated — the red
-copy was issued near tempo 95. The parser's red constant of 98.5 is a generic
-figure rather than roll 225's own, which is where the 4 % gap comes from. At
-tempo 70 the roll wants `setTPQ(420)`; `cis2roll.py` prints the header's tempo
-and the ticks it implies, since the right value belongs to the roll and not to
-the format.
+On playback speed the roll speaks for itself: it wants `setTPQ(420)`. Welte's
+printed "tempo" is roughly feet per minute times ten, the CIS header records
+tempo 70, Welte's own Skala-Rolle 98 booklet is calibrated at 70, and Phillips
+gives the green Welte 7 ft/min against nearly ten for the red. `cis2roll.py`
+prints the header's tempo and the ticks it implies, since the right value belongs
+to the roll rather than to the format.
+
+Comparing the two copies is a weaker check than it looks. Aligning them note by
+note gives a scale of 1.2907 between the two papers — Theil–Sen over 463 matched
+pairs at 0.99 mm rms, measured in the roll-desk edition rather than here. Read as
+pure speed that would put the red copy near tempo 90, comfortably below the
+parser's generic 98.5, which is the point worth keeping: 98.5 is a format default
+and not roll 225's own tempo. But the scale between two papers also carries
+whatever one has shrunk and the other stretched, and a single pair of copies
+cannot separate stretch from speed. A ratio taken from two landmark holes instead
+of the whole alignment is weaker again, and easy to get wrong: measure the green
+to its last performance hole and the red into its post-performance marks and the
+answer comes out near 1.35, because the run-out between last note and rewind is
+3.3 in on the red against 10.8 in on the green.
 
 Three things about the parser are worth knowing before repeating this.
 `setRollTypeGreenWelte` was an unfinished stub that called `exit(1)`, and its
