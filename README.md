@@ -6,7 +6,9 @@ TIFF or PNG, and can reproduce the PNG the scanner itself delivers.
 
 `mrs2roll.py` is a second tool that prepares a scan for Craig Sapp's
 [roll-image-parser](https://github.com/pianoroll/roll-image-parser); see
-[Feeding roll-image-parser](#feeding-roll-image-parser) below.
+[Feeding roll-image-parser](#feeding-roll-image-parser) below. `cis2image.py`
+reads a different scanner's files, the run-length coded `.CIS` of the
+rollscanners group; see [CIS files](#cis-files).
 
 The format is not documented anywhere I could find. What follows was derived by
 inspection of a single scan session, WR0225_02 of 12 April 2023 (Welte Rot,
@@ -418,6 +420,90 @@ as it goes, or that one was corrected and the other not. The across-roll
 distortion described under [Feeding roll-image-parser](#feeding-roll-image-parser)
 is a different thing: fixed in the sensor, the same on every line.
 
+## CIS files
+
+The rollscanners group, formed in 2001 around Richard Stibbons' contact image
+sensor scanner design, stores its scans as `.CIS` files: 1-bit, run-length
+coded, with a 52-byte header. Stibbons published the layout in 2003 and Pete
+Knobloch had described an earlier version in 2002; PlaySK's reader follows the
+same layout. Sample scans from this scanner family are in the PlaySK
+repository, and Stanford's pianoroll.sapp.org has a short page on the format.
+
+```
+cis2image.py [options] INPUT.CIS [OUTPUT.tif|OUTPUT.png]
+```
+
+```sh
+# describe a file, with its .ANN sidecar when one sits beside it
+python3 cis2image.py roll.CIS --info
+
+# the holes, as a 1-bit deflate TIFF
+python3 cis2image.py roll.CIS holes.tif
+
+# the printing of a bi-colour scan, the first 12000 lines, readable
+python3 cis2image.py roll.CIS text.png --channel ink --lines 0:12000 --rotate
+
+# a 1:8 overview of paper, holes and printing together
+python3 cis2image.py roll.CIS overview.png --channel composite --shrink 8
+```
+
+| Option | Effect |
+| --- | --- |
+| `--info` | print the header, then stop |
+| `--lines A:B` | convert only these scan lines |
+| `--channel NAME` | `holes` (default), `twin`, `ink`, or `composite` |
+| `--rotate` | turn by 180 degrees, the view of the roll on the piano |
+| `--shrink N` | block-average N × N pixels into one grey level |
+
+A single channel comes out as a bilevel image, white where light reached the
+sensor: in `holes` that is a hole or the space beside the paper, in `ink` it
+is everything but printing. `composite` needs a bi-colour scan and paints the
+paper grey, holes white and printing black. The TIFF carries the header's
+across and along resolutions, deflate compression and the title as its
+description.
+
+### Layout
+
+| Offset | Bytes | Content |
+| --- | --- | --- |
+| 0 | 32 | title, space padded |
+| 32 | 2 | reserved |
+| 34 | 2 | status word, below |
+| 36 | 2 | vertical separation of a twin array, in thousandths of an inch |
+| 38 | 2 | dots per inch across the roll |
+| 40 | 2 | pixels per line |
+| 42 | 2 | changeover pixel between the two arrays of a twin scanner |
+| 44 | 2 | tempo printed on the roll |
+| 46 | 2 | steps or encoder ticks per inch along the roll, before division |
+| 48 | 4 | number of lines |
+| 52 | | run-length data |
+
+All integers are little-endian. In the status word, bits 0–3 give the scanner
+type (1 free run, 2 position encoder, 3 shaft encoder, 4 stepper, 5 Kevin
+Keymer's delta mode 4), bit 4 speed-doubling hardware, bit 5 a twin array,
+bit 6 bi-colour, bits 8–11 the encoder division as a power of two, bit 12 a
+mirrored scan and bit 13 a reversed one.
+
+Each line then holds one run sequence per channel, in the order holes, twin
+array, ink: 16-bit run lengths alternating between dark and light, starting
+dark, that add up to the pixels per line. A line that begins light starts
+with a zero-length dark run. After the last channel comes one status word,
+whose bit 5 carries the hardware clock, bit 7 the encoder state and bit 15 a
+data overrun. The reader locates every sequence by walking the cumulative
+sum of the whole file, which has to be sequential because each status word
+shifts the sum for every line after it, and then renders rows by toggling at
+each run boundary.
+
+Lines are stored in scanning order, so line 0 is the leader and the roll runs
+down the image, which is also how the Stanford scans are oriented. On the one
+file examined, a bi-colour stepper scan of an Auto Pneumatic Action Company
+test roll at 300 dpi and 300 lines per inch, the printing reads upside down
+and not mirrored, so the bass side is at the left and `--rotate` gives the
+view on the piano. Encoder-clocked scans are written line for line; their
+lines are not evenly spaced along the roll, and re-clocking them, as PlaySK
+does, is not attempted here. The two arrays of a twin scanner are written as
+separate channels rather than stitched.
+
 ## Open questions
 
 - The last 6 % of PNG pixels, each off by one level. Probably a rounding or
@@ -456,3 +542,15 @@ is a different thing: fixed in the sensor, the same on every line.
   applied to MRS scans; `LENGTH_DPI` in any analysis produced here is that
   literal constant, not a measurement of the input.
 - roll-image-parser, <https://github.com/pianoroll/roll-image-parser>.
+- Stibbons, R. *Contact Image Sensor Roll Scanner File Formats*, 22 February
+  2003, <http://semitone440.co.uk/rolls/utils/cisheader/cis-format.htm>. The
+  header and status-word layout followed by `cis2image.py`.
+- Knobloch, P. *CIS File Format (Preliminary)*, 5 May 2002, read from
+  Stibbons' Q-Basic scanner software. Describes the single-channel version
+  with a 40-byte title; archived copy at
+  <https://web.archive.org/web/2012/http://www.trachtman.org/rollscans/CIS_File_Format.doc>.
+- PlaySK Piano Roll Reader, <https://github.com/nai-kon/PlaySK-Piano-Roll-Reader>.
+  Its `src/cis_image.py` reads the same layout, re-clocks encoder scans and
+  stitches twin arrays; its `sample_scans` folder holds CIS files of several
+  reproducing-piano formats.
+- Sapp, C. S. *CIS file format*, <http://pianoroll.sapp.org/file-types/cis/>.
