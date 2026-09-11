@@ -38,7 +38,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cis2image import BLOCK_LINES, PAPER, FormatError, Scan  # noqa: E402
+from cis2image import BLOCK_LINES, PAPER, FormatError, Scan, Spec  # noqa: E402
 from mrs2roll import PaperBand, add_run_centres, comb_fit, occupied_cells  # noqa: E402
 
 MM_PER_INCH = 25.4
@@ -319,7 +319,9 @@ def report(source: Source, cal: Calibration, frame: Frame) -> str:
     lines = [
         f"file          {scan.path.name}",
         f"source        {h.lines} lines x {h.pixels} pixels, "
-        f"{cal.across_dpi:g} dpi across, {cal.along_dpi:g} dpi along",
+        f"{cal.across_dpi:g} dpi across, {cal.along_dpi:g} dpi along"
+        + ("; the early header states no across dpi, so that figure is assumed "
+           "and the across scale rests on it" if h.spec is Spec.EARLY else ""),
         f"paper band    columns {b.left}..{b.right} ({paper} px = "
         f"{paper / cal.across_dpi:.3f} in), wander {b.wander} px",
         f"tracker grid  pitch {cal.pitch:.3f} px = {pitch_in:.4f} in = "

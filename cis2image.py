@@ -12,6 +12,17 @@ run-length coded, in the layout R. Stibbons described in 2003:
                     lengths that starts with a dark run and adds up to the
                     pixels per line, followed by one status word
 
+Files written before that carry the earlier layout P. Knobloch described in
+2002, whose 40-byte description covers the six bytes the later one spends on
+the status word, twin-array separation and resolution:
+
+    bytes 0..39     description, space padded
+    bytes 40..51    pixels per line, reserved, tempo, lines per inch, line count
+
+The two agree from byte 40 on, so an early file is one whose bytes 34..39 are
+still text.  Such a file names neither its scanner nor its resolution, and
+following CISREPORT it is read as a stepper scan at EARLY_DPI.
+
 The channels are the holes, the second array of a twin scanner, and the
 printing seen by a bi-colour scanner.  Lines are stored in scanning order, so
 line 0 is the leader and the printing reads upside down; --rotate turns the
@@ -26,20 +37,33 @@ import argparse
 import struct
 import sys
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 
 import numpy as np
 
 HEADER = struct.Struct("<32s2xHHHHHHHI")
+EARLY_HEADER = struct.Struct("<40sHHHHI")
 BLOCK_LINES = 2048
 OVERRUN = 1 << 15
 PAPER = 170
 CHANNELS = ("holes", "twin", "ink", "composite")
 
+# An early file states no resolution. The 2432-pixel default of the scanners of
+# the day spans a roll and its margins at this figure, which is also what
+# PlaySK assumes for a scan whose type it cannot read.
+EARLY_DPI = 200
+
 
 class FormatError(Exception):
     """The file does not follow the CIS layout."""
+
+
+class Spec(Enum):
+    """Which published header layout a file follows."""
+
+    CURRENT = "Stibbons 2003"
+    EARLY = "Knobloch 2002"
 
 
 class Scanner(IntEnum):
@@ -59,6 +83,18 @@ class Scanner(IntEnum):
         return self in (Scanner.POSITION_ENCODER, Scanner.SHAFT_ENCODER)
 
 
+def is_early_layout(raw: bytes) -> bool:
+    """Whether the header is the 2002 one, whose description runs to byte 39.
+
+    The reserved word is written as zero and falls inside that description, so
+    FIXCIS.BAS tells the layouts apart by reading it. Knobloch warns that a
+    description could be cut short with a NUL, which would defeat that test, so
+    a header whose bytes 34..39 are still text is taken as early too. No later
+    file can look early either way: text there means 8224 dpi or more."""
+    reserved = struct.unpack_from("<H", raw, 32)[0]
+    return reserved != 0 or all(0x20 <= byte < 0x7F for byte in raw[34:40])
+
+
 @dataclass(frozen=True)
 class Header:
     title: str
@@ -76,11 +112,16 @@ class Header:
     tempo: int
     lpi: int
     lines: int
+    spec: Spec
 
     @classmethod
     def parse(cls, raw: bytes) -> "Header":
         if len(raw) < HEADER.size:
             raise FormatError(f"file shorter than the {HEADER.size}-byte header")
+        return cls._early(raw) if is_early_layout(raw) else cls._current(raw)
+
+    @classmethod
+    def _current(cls, raw: bytes) -> "Header":
         fields = HEADER.unpack_from(raw)
         title, status, separation, dpi, pixels, changeover, tempo, lpi, lines = fields
         return cls(
@@ -99,6 +140,29 @@ class Header:
             tempo=tempo,
             lpi=lpi,
             lines=lines,
+            spec=Spec.CURRENT,
+        )
+
+    @classmethod
+    def _early(cls, raw: bytes) -> "Header":
+        description, pixels, _reserved, tempo, lpi, lines = EARLY_HEADER.unpack_from(raw)
+        return cls(
+            title=description.decode("latin-1").rstrip(" \0"),
+            scanner=Scanner.STEPPER,
+            speed_doubling=False,
+            twin_array=False,
+            bicolour=False,
+            encoder_division=1,
+            mirrored=False,
+            reversed=False,
+            twin_separation_mils=0,
+            dpi=EARLY_DPI,
+            pixels=pixels,
+            changeover=0,
+            tempo=tempo,
+            lpi=lpi,
+            lines=lines,
+            spec=Spec.EARLY,
         )
 
     @property
@@ -190,7 +254,7 @@ def _render(words: np.ndarray, starts: np.ndarray, ends: np.ndarray, width: int)
 
 
 def read_annotations(path: Path) -> dict[str, str]:
-    """Trachtman's .ANN sidecar: one `/key: value` per line."""
+    """The .ANN sidecar, Stahnke's convention: one `/key: value` per line."""
     lines = path.read_text(encoding="latin-1").splitlines()
     pairs = (line[1:].split(":", 1) for line in lines if line.startswith("/") and ":" in line)
     return {key.strip(): value.strip() for key, value in pairs}
@@ -289,12 +353,14 @@ def describe(scan: Scan) -> str:
         if on
     ]
     overruns = scan.overrun_lines
+    assumed = " (assumed)" if h.spec is Spec.EARLY else ""
     lines = [
         f"file          {scan.path.name}",
+        f"header        {h.spec.value} layout",
         f"title         {h.title}",
-        f"scanner       {kind}" + (", " + ", ".join(flags) if flags else ""),
+        f"scanner       {kind}{assumed}" + (", " + ", ".join(flags) if flags else ""),
         f"raster        {h.lines} lines x {h.pixels} pixels; channels {', '.join(h.channels)}",
-        f"across        {h.dpi} dpi",
+        f"across        {h.dpi} dpi{assumed}",
         f"along         {h.lpi} lines per inch"
         + (f", encoder division {h.encoder_division}" if h.encoder_division > 1 else "")
         + (", not re-clocked" if h.scanner.clocked else ""),
