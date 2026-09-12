@@ -27,6 +27,11 @@ either paper edge, which is enough for roll-image-parser, whose grid is straight
 by construction, to read an expression track as its neighbour.  The departure is
 an odd cubic about the middle of the sensor, so it is fitted from the roll's own
 columns and undone while resampling.  `--no-straighten` leaves it in place.
+
+The tilt of the scan line against the punch rows, Stahnke's skew, is measured
+from the roll's own punch onsets and reported.  It is not corrected: whether
+undoing it helps roll-image-parser wants an experiment first, and the estimator
+cannot by itself tell a tilted sensor from an asymmetry in the playing.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -48,6 +54,7 @@ TARGET_WIDTH = 4096  # the width its tracker-spacing FFT assumes
 BLOCK_ROWS = 4000
 MIN_CELL_MASS = 200  # histogram mass below which a column is dust, not a track
 GRID_REFINEMENTS = 3  # passes of fit, reassign indices, fit again
+BARREL_INVERSE_STEPS = 40  # Newton passes to invert the cubic
 
 
 @dataclass(frozen=True)
@@ -94,10 +101,36 @@ class Barrel:
         offset = columns - self.centre
         return self.centre + offset + self.k3 * offset**3
 
+    def source_of(self, columns: np.ndarray) -> np.ndarray:
+        """Where the tracks imaged at these columns belong: `image_of` inverted."""
+        straight = np.asarray(columns, dtype=float).copy()
+        for _ in range(BARREL_INVERSE_STEPS):
+            offset = straight - self.centre
+            straight -= (self.image_of(straight) - columns) / (1 + 3 * self.k3 * offset**2)
+        return straight
+
     def edge_shift(self, band: PaperBand) -> tuple[float, float]:
         """Displacement at either paper edge, in track pitches."""
         edges = np.array([band.left, band.right], dtype=float) - self.centre
         return tuple(self.k3 * edges**3 / self.pitch)
+
+
+@dataclass(frozen=True)
+class Skew:
+    """Tilt of a row of punches against the scan line.
+
+    A tilted sensor meets the paper a little later on one side than the other,
+    so every punch in a row is displaced along the roll in proportion to how
+    far across the roll it sits.  `slope` is that displacement per mm across."""
+
+    slope: float  # mm along the roll per mm across it
+    residual: float  # rms of a track's offset about the fitted line, in mm
+    tracks_used: int
+    pairs: int
+
+    def across(self, paper_mm: float) -> float:
+        """Displacement along the roll between the two paper edges, in mm."""
+        return self.slope * paper_mm
 
 
 @dataclass(frozen=True)
@@ -106,9 +139,18 @@ class Calibration:
     grid: TrackGrid
     straighten: bool  # whether a barrel was asked for
     barrel: Barrel | None  # whether one could be measured
-    across_px_per_mm: float
+    skew: Skew | None
     along_px_per_mm: float
     track_pitch_mm: float
+
+    @property
+    def source_pitch(self) -> float:
+        """Track pitch the resampling works from, in source columns."""
+        return self.barrel.pitch if self.barrel else self.grid.pitch
+
+    @property
+    def across_px_per_mm(self) -> float:
+        return self.source_pitch / self.track_pitch_mm
 
     @property
     def across_dpi(self) -> float:
@@ -117,6 +159,10 @@ class Calibration:
     @property
     def along_dpi(self) -> float:
         return self.along_px_per_mm * MM_PER_INCH
+
+    @property
+    def paper_mm(self) -> float:
+        return self.band.width / self.across_px_per_mm
 
 
 def track_pitch_mm(scan: RollScan) -> float:
@@ -363,6 +409,183 @@ def measure_barrel(hist: np.ndarray, band: PaperBand, pitch: float) -> Barrel | 
     )
 
 
+TRACK_WINDOW = 0.30  # fraction of a pitch sampled either side of a track centre
+ONSET_GRID_LINES = 0.25  # sample step of the correlation grid, in scan lines
+SKEW_SMEAR_MM = 0.14  # width an onset is smeared to before correlating
+SKEW_MAX_LAG_MM = 0.7  # largest lag the correlation will consider
+SKEW_SPAN_PAD = 10.0  # lines of empty grid past the last onset
+SKEW_COMPASS_MM = 100.0  # distance either side of centre the fit is taken over
+SKEW_STRAY_MM = 1.0  # offset this far off the median is a mis-locked correlation
+MIN_TRACK_ONSETS = 40  # onsets below which a track cannot pin down a lag
+MIN_SKEW_TRACKS = 8
+MIN_SKEW_PAIRS = 20
+
+
+def track_windows(columns: np.ndarray, pitch: float, samples: int):
+    """First and last-plus-one column of the window sampled for each track."""
+    half = max(1, int(round(TRACK_WINDOW * pitch)))
+    centre = np.rint(columns).astype(int)
+    return (np.clip(centre - half, 0, samples - 1),
+            np.clip(centre + half + 1, 1, samples))
+
+
+def window_means(block: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+    """Mean of each track window, one row per line of `block`."""
+    return np.stack([block[:, a:b].mean(axis=1) for a, b in zip(lo, hi)], axis=1)
+
+
+def onset_positions(profile: np.ndarray, threshold: float) -> np.ndarray:
+    """Sub-line position where each run of open pixels in `profile` begins."""
+    starts = np.flatnonzero(np.diff((profile > threshold).astype(np.int8)) == 1)
+    before, after = profile[starts], profile[starts + 1]
+    rise = after - before
+    frac = np.where(rise != 0, (threshold - before) / np.where(rise != 0, rise, 1.0), 0.5)
+    return starts + np.clip(frac, 0.0, 1.0)
+
+
+def onset_trains(profiles: np.ndarray, threshold: float) -> dict[int, np.ndarray]:
+    """Punch onsets down the roll, per track."""
+    return {j: onset_positions(profiles[:, j], threshold) for j in range(profiles.shape[1])}
+
+
+@dataclass(frozen=True)
+class TrackPair:
+    """The along-roll lag measured between two tracks' onset trains."""
+
+    earlier: int
+    later: int
+    lag: float  # lines the later track's onsets sit behind the earlier's
+    quality: float  # height of the correlation peak, normalised to both trains
+
+
+def onset_density(onsets: np.ndarray, length: int, sigma: float) -> np.ndarray:
+    """Onsets smeared onto a fine grid, so a lag can come out below one line."""
+    grid = np.zeros(length)
+    index = onsets / ONSET_GRID_LINES
+    lower = np.floor(index).astype(int)
+    frac = index - lower
+    inside = (lower >= 0) & (lower < length - 1)
+    np.add.at(grid, lower[inside], 1 - frac[inside])
+    np.add.at(grid, lower[inside] + 1, frac[inside])
+    half = int(4 * sigma / ONSET_GRID_LINES)
+    offset = np.arange(-half, half + 1) * ONSET_GRID_LINES
+    return np.convolve(grid, np.exp(-0.5 * (offset / sigma) ** 2), mode="same")
+
+
+def peak_lag(correlation: np.ndarray, reach: int) -> tuple[float, float] | None:
+    """Lag of the correlation peak in lines, and its height, or None if it ran out.
+
+    The peak is interpolated through its two neighbours, which is what puts the
+    lag below the grid step."""
+    window = np.r_[correlation[-reach:], correlation[: reach + 1]]
+    top = int(window.argmax())
+    if top in (0, len(window) - 1):
+        return None  # the peak is at or past the edge, so it is not located
+    before, after, height = window[top - 1], window[top + 1], window[top]
+    curve = before - 2 * height + after
+    shift = 0.5 * (before - after) / curve if curve else 0.0
+    return float((top - reach + np.clip(shift, -1, 1)) * ONSET_GRID_LINES), float(height)
+
+
+def pairwise_lags(trains, tracks, length, sigma, reach) -> list[TrackPair]:
+    """Lag of peak cross-correlation between every pair of tracks.
+
+    Correlating whole trains uses every onset, where matching onsets that fall
+    close together would bias the lag towards zero."""
+    density = {j: onset_density(trains[j], length, sigma) for j in tracks}
+    spectrum = {j: np.fft.rfft(d) for j, d in density.items()}
+    norm = {j: np.linalg.norm(d) for j, d in density.items()}
+
+    def measure(a: int, b: int) -> TrackPair | None:
+        found = peak_lag(np.fft.irfft(np.conj(spectrum[a]) * spectrum[b], n=length), reach)
+        if found is None:
+            return None
+        lag, height = found
+        return TrackPair(a, b, lag, float(height / (norm[a] * norm[b])))
+
+    measured = (measure(a, b) for a, b in combinations(tracks, 2))
+    return [pair for pair in measured if pair is not None]
+
+
+def track_offsets(pairs: list[TrackPair], tracks: int) -> np.ndarray:
+    """Per-track along-roll offset from the pairwise lags, mean pinned to zero."""
+    design = np.zeros((len(pairs) + 1, tracks))
+    row = np.arange(len(pairs))
+    design[row, [pair.later for pair in pairs]] = 1
+    design[row, [pair.earlier for pair in pairs]] = -1
+    design[-1] = 1
+    quality = np.array([pair.quality for pair in pairs])
+    target = np.r_[[pair.lag for pair in pairs], 0.0]
+    weight = np.sqrt(np.r_[quality, quality.sum()])
+    return np.linalg.lstsq(design * weight[:, None], target * weight, rcond=None)[0]
+
+
+def fit_skew(across_mm, along_mm, mass, pairs: int) -> Skew | None:
+    """Straight line through the inner tracks' offsets against position across the roll.
+
+    The outermost tracks are the sparsest and the likeliest to have locked onto
+    a neighbouring punch, so the line is taken over the inner compass only."""
+    inner = ((np.abs(along_mm - np.median(along_mm)) < SKEW_STRAY_MM)
+             & (np.abs(across_mm) < SKEW_COMPASS_MM))
+    if inner.sum() < MIN_SKEW_TRACKS:
+        return None
+    x, y, weight = across_mm[inner], along_mm[inner], mass[inner]
+    slope, intercept = np.polyfit(x, y, 1, w=np.sqrt(weight))
+    residual = y - (slope * x + intercept)
+    return Skew(
+        slope=float(slope),
+        residual=float(np.sqrt(np.average(residual**2, weights=weight))),
+        tracks_used=int(inner.sum()),
+        pairs=pairs,
+    )
+
+
+def measure_skew(trains, across_mm, mm_per_line: float) -> Skew | None:
+    """Along-roll skew from the punch onsets, or None if the roll cannot show it.
+
+    This cannot separate a tilted sensor from a roll whose bass was played
+    consistently before its treble.  Only comparing scans of one performance
+    can, so the figure is reported and not corrected."""
+    tracks = [j for j, train in trains.items() if len(train) >= MIN_TRACK_ONSETS]
+    if len(tracks) < MIN_SKEW_TRACKS:
+        return None
+    sigma = max(1.0, SKEW_SMEAR_MM / mm_per_line)
+    reach = int(SKEW_MAX_LAG_MM / mm_per_line / ONSET_GRID_LINES)
+    span = max(trains[j].max() for j in tracks) + SKEW_SPAN_PAD
+    pairs = pairwise_lags(trains, tracks, int(span / ONSET_GRID_LINES) + 1, sigma, reach)
+    if len(pairs) < MIN_SKEW_PAIRS:
+        return None
+    cut = np.percentile([pair.quality for pair in pairs], 25)
+    strong = [pair for pair in pairs if pair.quality > cut]
+    offsets = track_offsets(strong, len(across_mm)) * mm_per_line
+    used = np.array(tracks)
+    mass = np.array([len(trains[j]) for j in tracks], dtype=float)
+    return fit_skew(across_mm[used], offsets[used], mass, len(strong))
+
+
+def track_profiles(scan: RollScan, gains, columns: np.ndarray, pitch: float) -> np.ndarray:
+    """Mean brightness inside each track's window, one row per scan line."""
+    lo, hi = track_windows(columns, pitch, scan.geometry.samples)
+    profiles = np.empty((scan.geometry.lines, len(columns)), dtype=np.float32)
+    for start in range(0, scan.geometry.lines, BLOCK_ROWS):
+        stop = min(start + BLOCK_ROWS, scan.geometry.lines)
+        grey = scan.lines(start, stop).mean(axis=2)
+        profiles[start:stop] = window_means(grey * gains if gains is not None else grey, lo, hi)
+    return profiles
+
+
+def scan_skew(scan: RollScan, gains, hist, barrel, pitch, pitch_mm, hole_min) -> Skew | None:
+    """Along-roll skew of an MRS scan, measured against the straightened columns."""
+    columns, _ = hole_columns(hist)
+    if len(columns) < MIN_SKEW_TRACKS:
+        return None
+    profiles = track_profiles(scan, gains, columns, pitch)
+    straight = barrel.source_of(columns) if barrel else columns
+    across_mm = (straight - straight.mean()) * pitch_mm / pitch
+    return measure_skew(onset_trains(profiles, hole_min), across_mm,
+                        1.0 / NOMINAL_LINES_PER_MM)
+
+
 def calibrate(scan: RollScan, gains, paper_max, hole_min, pitch_mm, straighten) -> Calibration:
     band = find_paper_band(scan, gains, paper_max)
     hist = hole_histogram(scan, band, gains, hole_min)
@@ -375,7 +598,7 @@ def calibrate(scan: RollScan, gains, paper_max, hole_min, pitch_mm, straighten) 
         grid=grid,
         straighten=straighten,
         barrel=barrel,
-        across_px_per_mm=pitch / pitch_mm,
+        skew=scan_skew(scan, gains, hist, barrel, pitch, pitch_mm, hole_min),
         along_px_per_mm=NOMINAL_LINES_PER_MM,
         track_pitch_mm=pitch_mm,
     )
@@ -487,6 +710,33 @@ def barrel_lines(cal: Calibration) -> list[str]:
     ]
 
 
+def across_uncertainty(cal: Calibration) -> str:
+    """What the across-roll dpi's error bar rests on, where there is one to quote.
+
+    The comb's standard error belongs to the comb's pitch.  When a barrel is
+    fitted the resampling works from the cubic's pitch instead, which carries
+    no error bar of its own, so the two estimators are quoted side by side
+    rather than one's spread being attached to the other's figure."""
+    g = cal.grid
+    if cal.barrel is None:
+        return f"+/- {cal.across_dpi * g.pitch_error / g.pitch:.1f} from the pitch alone"
+    gap = (cal.source_pitch - g.pitch) / g.pitch
+    return (f"from the cubic's pitch, which has no error bar of its own; the comb "
+            f"over the same holes reads {g.pitch:.3f} +/- {g.pitch_error:.3f} px, "
+            f"{gap * 100:+.2f}% away")
+
+
+def skew_line(skew: Skew | None, paper_mm: float, lines_per_mm: float) -> str:
+    """The report's skew line, for either tool."""
+    if skew is None:
+        return "skew          not measured; too few tracks carry enough punches"
+    shift = skew.across(paper_mm)
+    return (f"skew          {shift:+.2f} mm along the roll across the "
+            f"{paper_mm:.0f} mm paper = {shift * lines_per_mm:+.1f} scan lines "
+            f"({skew.tracks_used} tracks, {skew.pairs} pairs, "
+            f"residual {skew.residual:.3f} mm); reported only, the image is not deskewed")
+
+
 def report(scan: RollScan, cal: Calibration, frame: Frame) -> str:
     g, b = cal.grid, cal.band
     return "\n".join(
@@ -497,16 +747,16 @@ def report(scan: RollScan, cal: Calibration, frame: Frame) -> str:
             f"coherence {g.coherence:.3f}, {g.tracks_seen} tracks occupied, "
             f"grid residual {g.residual:.2f} px",
             *barrel_lines(cal),
+            skew_line(cal.skew, cal.paper_mm, cal.along_px_per_mm),
             f"track pitch   {cal.track_pitch_mm:.5f} mm (nominal, from the roll trailer)",
             f"across        {cal.across_px_per_mm:.3f} px/mm = {cal.across_dpi:.1f} dpi "
-            f"(+/- {cal.across_dpi * g.pitch_error / g.pitch:.1f} from the pitch alone; "
-            f"the nominal mm above is the larger unknown)",
+            f"({across_uncertainty(cal)}; the nominal mm above is the larger unknown)",
             f"along         {cal.along_px_per_mm:.4f} px/mm = {cal.along_dpi:.2f} dpi "
             f"(0.2 mm/line design step)",
             f"scale         x {frame.x_scale:.5f}, y {frame.y_scale:.5f}",
             f"output        {frame.rows} rows x {frame.width} cols, "
             f"paper {b.width * frame.x_scale:.0f} px, "
-            f"tracker spacing {g.pitch * frame.x_scale:.3f} px",
+            f"tracker spacing {cal.source_pitch * frame.x_scale:.3f} px",
             f"source window columns {frame.left:.1f}..{frame.right:.1f}",
         ]
     )

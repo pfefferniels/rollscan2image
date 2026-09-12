@@ -348,6 +348,86 @@ not the whole of it; it takes the track centres from 1.18 px off a straight grid
 to 0.46 px, which is the same order as the Stanford scans manage, but the residual
 that remains has not been chased further.
 
+### Skew along the roll
+
+A row of perforations punched at one instant lies square across the paper. Where
+the scan line meets that row at a slight angle, every punch in it is displaced
+along the roll in proportion to how far across the roll it sits. Stahnke names
+this skew, "the tilt of a single row of perforations caused by angular
+misalignment of the scan line with respect to the array of punches in the
+perforator", and treats it as one of the two systematic errors of a roll scan,
+the other being scatter.
+
+Both tools measure skew and print it. Neither corrects it, and the resampled
+image is byte-for-byte what it was before the measurement was added. Whether
+correcting it helps `tiff2holes` is a separate question that wants an experiment
+first.
+
+The roll is its own reference here. Punch onsets are taken per tracker column, to
+a fraction of a scan line by interpolating the threshold crossing, and every pair
+of columns is cross-correlated to give the lag between their onset trains. The
+per-column offsets follow from those pairwise lags by least squares, and a
+straight line through them against position across the roll is the skew.
+Correlating whole trains rather than pairing onsets that happen to fall close
+together matters, since restricting pairs to a small window biases the slope
+towards zero.
+
+Three scans of one performance, Grünfeld's *Träumerei* from roll 225:
+
+| scan | skew across the paper | scan lines |
+| --- | --- | --- |
+| MRS `.mrs`, Welte Rot | −0.18 mm over 323 mm | −0.9 |
+| Chase CIS, Welte Licensee | +0.11 mm over 286 mm | +0.8 |
+| Dyer CIS, Welte T-98 | −0.77 mm over 285 mm | −10.9 |
+
+The Dyer figure is about 9 px once resampled to 300 dpi, and something like 20 ms
+of playing time at the roll's printed tempo. The other two are under a scan line.
+
+The estimator cannot separate a tilted scan line from a performance whose bass
+consistently preceded its treble, because both displace one side of the roll
+against the other. The defence is differential rather than internal. These are
+three scans of the same playing and they disagree, so at least two of the three
+figures belong to the scanners. The Dyer figure also holds page by page down its
+roll, reading −0.91, −0.41, −0.70 and −0.88 mm over four successive fifths of it,
+which is what a fixed angle looks like rather than a drifting performance.
+
+Outside evidence points the same way for the Chase scan. The MIDI distributed
+with it, `W225E.mid`, was written in 2004 by Warren Trachtman's conversion
+software, and carries text meta-events in the keyword scheme Stahnke published
+and Trachtman adopted:
+
+```
+/skew_correction:   0.0112 degrees | Auto
+/punch_length:  0.075 inches | manually set
+/Punch_Matrix_Restoration: DISABLED
+```
+
+That is the software's own record of what it did to its own output rather than a
+measurement made here. Read at face value it says skew was found and removed
+automatically, and Chase's is the scan that measures nearest zero, so the one
+pipeline known to have had a skew correction step is the one that leaves least
+behind. (His 0.0112 degrees is about 0.056 mm over his 285.5 mm of paper, the
+same order as the +0.11 mm still measurable, though the two figures are not
+directly comparable and no part of the argument rests on their agreeing.) The
+same block is a reminder of how much of Stahnke's parameter set was already
+implemented in period software: punch length is set there, and punch-matrix
+restoration is a switch, turned off for this file.
+
+Three limits are worth stating plainly. The line is fitted over the inner ±100 mm
+of the paper, since the outermost columns carry the fewest punches and are the
+ones whose correlation is likeliest to lock onto a neighbouring punch. A column
+that does lock wrongly is dropped from the fit, though its bad lags still pull the
+remaining offsets a little through the least squares. And the page-by-page spread
+above is a third of the figure itself, so the whole-roll number carries a sign and
+an order of magnitude rather than three digits. Stahnke separates static skew, the
+mean over the roll, from dynamic skew, the variation about it. Only the static
+mean is reported here, and some of that page-to-page spread may be dynamic skew
+rather than noise in the estimator.
+
+Stahnke's method goes further in two directions this does not follow. He also
+finds and removes scatter, the column-to-column deviation left once skew is taken
+out, and he reconstructs the punch matrix rather than only measuring its defects.
+
 ### The one change roll-image-parser needs
 
 `analyzeTrackerBarSpacing` takes the tallest peak of the centroid histogram's
@@ -711,6 +791,20 @@ between 60 and 199, then 14016 at 200–499 px, which are the punches — so a 3
 opening clears the noise and cannot reach a punch twenty pixels across. On this
 roll it took `ANTIDUST_COUNT` from 6823 to 2, moved `MUSICAL_HOLES` by one and
 `AVG_HOLE_WIDTH` by 0.27 px, and left the extracted MIDI identical key for key.
+
+**The scan line can sit at an angle to the punch rows.** `cis2roll.py` measures
+that skew and prints it, by the method described under
+[Skew along the roll](#skew-along-the-roll), and leaves the image alone. The two
+CIS scans of roll 225 differ here more than anywhere else in their geometry: the
+Dyer scan comes out at −0.77 mm along the roll across its 285 mm of paper, about
+10.9 scan lines or 9 px once resampled, where Chase's reads +0.11 mm, under a
+scan line. The MRS scan of the same performance reads −0.18 mm, so the Dyer
+figure is the outlier of the three and holds steady page by page down its own
+roll, and the MIDI written from Chase's scan declares that his conversion
+software corrected skew automatically, which fits his being the one that measures
+near zero. What the estimator cannot do is tell a tilted sensor from an asymmetry
+in the playing, which is why three scans of one performance are needed to say
+anything at all.
 
 ### What the run produced
 
@@ -1077,6 +1171,22 @@ as above. And `setMidiFileTempo` gained the branch described above.
 - *CIS Utilities* readme, April 2005, in `CISUtilities.ZIP` on iammp.org.
   Anthony Robinson on re-clocking encoder scans, and on having "dragged Richard
   out of retirement" to settle ambiguities in the specification.
+- Stahnke, W. "Skew, Scatter, and Pitch in Music Roll Scans", in Judith Kemp
+  (ed.), *Digitising Piano Rolls*, Deutsches Museum Studies 17 (2026),
+  pp. 83–128. Defines skew and scatter as the two systematic errors of a roll
+  scan, separates static from dynamic skew, and gives models that find both
+  along with the pitch and reconstruct the punch matrix. The skew measurement
+  here follows the definition and takes the estimate no further than the static
+  mean; scatter and the punch matrix are not attempted.
+- `W225E.mid`, the MIDI distributed with Chase's scan of roll 225, converted
+  6 March 2004 by Trachtman's software and copyright 2006 Spencerserolls.com.
+  Its text meta-events follow the keyword scheme below and record the conversion's
+  own settings: `/scanner_horiz_DPI: 204`, `/scanner_LPI: 180`,
+  `/skew_correction:   0.0112 degrees | Auto`, `/punch_length:  0.075 inches |
+  manually set` and `/Punch_Matrix_Restoration: DISABLED`. These are the
+  software's claims about its own output, not measurements made here, and they
+  are used above only as evidence that a skew-correction step was in that
+  pipeline and not in Dyer's.
 - Stahnke, W. *Annotation Keywords*, <http://semitone440.co.uk/rolls/utils/stahnke/keywords.htm>.
   The specification for the `.ANN` sidecar `cis2image.py` reads, and the reason
   the file is his rather than the scanner group's. It states the syntax — "All

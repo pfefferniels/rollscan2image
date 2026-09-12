@@ -26,6 +26,11 @@ leave it unable to find the paper edge at all.  And a one-bit scan carries
 isolated lit pixels that an eight-bit one would have averaged away, which
 tiff2holes counts as dust; a 3x3 opening removes them.
 
+The tilt of the scan line against the punch rows is measured and reported, and
+left in place.  Of the two CIS scans of roll 225 it is a tenth of a scan line in
+one and eleven lines in the other, which is worth knowing before reading timing
+off either.
+
 The scan is written as it was read.  If the roll comes out with the bass on the
 right or running up the image, say so with --mirror or --rotate.
 """
@@ -42,7 +47,20 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cis2image import BLOCK_LINES, PAPER, FormatError, Scan, Spec  # noqa: E402
-from mrs2roll import PaperBand, add_run_centres, comb_fit, occupied_cells  # noqa: E402
+from mrs2roll import (  # noqa: E402
+    MIN_SKEW_TRACKS,
+    PaperBand,
+    Skew,
+    add_run_centres,
+    comb_fit,
+    hole_columns,
+    measure_skew,
+    occupied_cells,
+    onset_trains,
+    skew_line,
+    track_windows,
+    window_means,
+)
 
 MM_PER_INCH = 25.4
 TARGET_DPI = 300.0  # what tiff2holes is calibrated for
@@ -54,6 +72,7 @@ SAMPLE_BLOCKS = 24  # places along the roll the paper is measured at
 SAMPLE_LINES = 64
 FINEST_TRACKS_PER_INCH = 12.5  # bracket for the tracker pitch search
 COARSEST_TRACKS_PER_INCH = 5.5
+LIT_SHARE = 0.5  # share of a track window lit that counts the track as open
 
 
 @dataclass(frozen=True)
@@ -109,8 +128,13 @@ class Calibration:
     coherence: float  # 0..1; how tightly the holes sit on the grid
     tracks_seen: int
     speckle: float  # share of lit pixels the opening removes
+    skew: Skew | None
     across_dpi: float
     along_dpi: float
+
+    @property
+    def paper_mm(self) -> float:
+        return (self.paper.band.width + 1) / self.across_dpi * MM_PER_INCH
 
 
 def _neighbourhood(mask: np.ndarray):
@@ -235,6 +259,29 @@ def hole_histogram(source: Source, band: PaperBand) -> np.ndarray:
     return hist
 
 
+def track_profiles(source: Source, columns: np.ndarray, pitch: float) -> np.ndarray:
+    """Share of each track's window that is lit, one row per scan line."""
+    header = source.scan.header
+    lo, hi = track_windows(columns, pitch, header.pixels)
+    profiles = np.empty((header.lines, len(columns)), dtype=np.float32)
+    for start in range(0, header.lines, BLOCK_LINES):
+        stop = min(start + BLOCK_LINES, header.lines)
+        profiles[start:stop] = window_means(source.lines(start, stop), lo, hi)
+    return profiles
+
+
+def scan_skew(source: Source, hist: np.ndarray, pitch: float) -> Skew | None:
+    """Along-roll skew of a CIS scan, measured from the punch onsets."""
+    header = source.scan.header
+    columns, _ = hole_columns(hist)
+    if len(columns) < MIN_SKEW_TRACKS:
+        return None
+    profiles = track_profiles(source, columns, pitch)
+    across_mm = (columns - columns.mean()) / header.dpi * MM_PER_INCH
+    return measure_skew(onset_trains(profiles, LIT_SHARE), across_mm,
+                        MM_PER_INCH / header.along_dpi)
+
+
 def calibrate(source: Source) -> Calibration:
     header = source.scan.header
     paper = find_paper(source)
@@ -247,6 +294,7 @@ def calibrate(source: Source) -> Calibration:
         coherence=coherence,
         tracks_seen=len(occupied_cells(hist, pitch, phase)),
         speckle=speckle_share(source),
+        skew=scan_skew(source, hist, pitch),
         across_dpi=float(header.dpi),
         along_dpi=header.along_dpi,
     )
@@ -367,6 +415,7 @@ def report(source: Source, cal: Calibration, frame: Frame) -> str:
         "despeckle     "
         + (f"3x3 opening, {cal.speckle * 100:.2f}% of lit pixels removed"
            if source.despeckle else "off"),
+        skew_line(cal.skew, cal.paper_mm, cal.along_dpi / MM_PER_INCH),
         f"roll tempo    {h.tempo} as printed, i.e. {h.tempo / 10:.1f} ft/min; "
         f"tiff2holes wants setTPQ({round(h.tempo * target_dpi / 50)}) for that"
         if h.tempo else "roll tempo    not recorded in the header",
