@@ -359,9 +359,9 @@ perforator", and treats it as one of the two systematic errors of a roll scan,
 the other being scatter.
 
 Both tools measure skew and print it. Neither corrects it, and the resampled
-image is byte-for-byte what it was before the measurement was added. Whether
-correcting it helps `tiff2holes` is a separate question that wants an experiment
-first.
+image is byte-for-byte what it was before the measurement was added. That is a
+tested decision rather than a deferral; see [What correcting it
+buys](#what-correcting-it-buys).
 
 The roll is its own reference here. Punch onsets are taken per tracker column, to
 a fraction of a scan line by interpolating the threshold crossing, and every pair
@@ -421,8 +421,43 @@ remaining offsets a little through the least squares. And the page-by-page sprea
 above is a third of the figure itself, so the whole-roll number carries a sign and
 an order of magnitude rather than three digits. Stahnke separates static skew, the
 mean over the roll, from dynamic skew, the variation about it. Only the static
-mean is reported here, and some of that page-to-page spread may be dynamic skew
-rather than noise in the estimator.
+mean is reported here, and the page-to-page spread cannot be read as dynamic
+skew: over 300 mm stretches the MRS scan, whose whole-roll slope is the smallest
+of the three, scatters more widely than the Dyer scan does. At that window length
+the estimate is dominated by its own noise.
+
+### What correcting it buys
+
+Nothing measurable, on the evidence available. Shearing the Dyer scan by its
+measured slope drops the residual skew from −2.73e-3 to −0.41e-3, so the
+correction works as arithmetic, and then almost nothing downstream moves.
+`tiff2holes` returns the same 15,680 musical holes and 1,103 notes, the same
+18.84 px hole width, a roll width changed by 0.06 px and a tracker separation
+changed in the fourth decimal. Only `BAD_HOLE_COUNT` moves, from 1 to 11, and
+that is the second interpolation softening one-bit edges rather than anything
+about the roll.
+
+The external test is the sharper one and also comes out flat. Aligning the Dyer
+scan against the MRS scan note by note, the residual should tilt with position
+across the roll by the difference of their skews. Over the note compass that
+predicts +0.39 mm and the observed tilt is +0.17 ± 0.22 mm; over the longer lever
+of the sustain marks it predicts −0.52 mm and the observed offset is
+−0.02 ± 0.12 mm. Fitting one multiplier on the predicted displacement across both
+gives 0.12 ± 0.25, which excludes 1 at about 3.5 sigma. Deskewing before aligning
+changes the residual from 0.991 to 0.994 mm, which is to say not at all.
+
+So the shear is in the image and does not appear to be in the paper positions.
+Two readings survive that, and this data cannot separate them: the estimator may
+be reporting something real about the scanner that the cross-copy comparison is
+too noisy to confirm, or part of what it measures may be a bass-to-treble
+asymmetry shared by the copies, which correcting one copy would then introduce
+rather than remove. A cutting asymmetry belongs to an edition and a sensor angle
+belongs to a machine, so the way to separate them is to measure other rolls from
+the same scanner rather than other copies of this one.
+
+The measurement is reported because it bounds a within-scan reading: onset
+differences taken across the compass of the Dyer scan carry up to about 17 ms of
+instrumental origin. It is a caveat to weigh, not a bias to subtract.
 
 Stahnke's method goes further in two directions this does not follow. He also
 finds and removes scatter, the column-to-column deviation left once skew is taken
