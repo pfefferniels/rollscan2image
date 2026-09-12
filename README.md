@@ -890,8 +890,9 @@ the rewind puts track 1 at 2.24 spacings from the bass paper edge and track 98 a
 quarter of a spacing, and every lock-and-cancel pair then comes out matched:
 bass Crescendo off/on at 86 and 86 punches, bass Forzando at 18 and 19, bass Soft
 pedal at 2 and 3, treble Sustain at 52 and 51, treble Forzando at 3 and 3, treble
-Crescendo at 83 and 83. Mezzoforte is punched once on each of its two bass tracks
-and not at all on its treble pair, so this performance never sets the hook.
+Crescendo at 83 and 83. Mezzoforte is punched once, on the bass cancel track
+before the music begins, and not at all on its treble pair, so the hook is
+cancelled at the head of the roll and never set.
 The rewind is a single 1.5 in perforation on track 89, 13 in past the last note,
 which is the T-100's dedicated rewind track moved two places in — quite unlike
 the green, where the rewind shares bass hole 1 with Forzando piano and is told
@@ -931,6 +932,47 @@ factor of 1.20, and the same margin over this scan's 1.29 gives 1.55.
 extracted MIDI is identical either way — the check reaches the quality report
 and the marked-up image, not the music. Whether the bloom should instead be
 taken out of the image is an open question below.
+
+**Chase's own reading of the roll agrees with the analysis.** The `.bar` beside
+the CIS is his software's hole list for the same copy, at its own calibration of
+400 rows to the inch, and it is an external check on everything above. Imported
+into the `linked-rolls` edition alongside the analysis, the two give the same 51
+tracker positions with the same counts on each, and 953 of the `.bar`'s 955 holes
+find a counterpart within 1.5 mm. Aligned note by note the residual is 0.026 mm
+over 463 notes, and the onsets differ by a median of 0.000 mm with the fifth and
+ninety-fifth percentiles at ±0.063 mm. The scale between them comes out
+1.000833, which is exactly `LENGTH_DPI`: the reader divides by that literal
+300.25 where this image is 300 dpi, so the two calibrations agree outright once
+the constant is taken off. That also settles the along-roll figure from a second
+direction, since 400 rows to the inch and 180 lines to the inch describe the
+same paper.
+
+Three holes differ, and none of them is a note. The `.bar` reads a Mezzoforte-On
+at the head of the roll where the scan has a slot 0.19 in wide and 2.3 in long,
+spanning two tracker positions and far too wide to be a punch; it lies in the
+leader, and the analysis leaves it out. The `.bar` splits one C4 into a short
+punch and the chain behind it where the analysis reads the two as one note, a
+borderline call at a 0.063 in bridge. And the analysis carries the rewind, which
+the `.bar` stops short of, so the edition can find the roll's end from the
+analysis and not from the `.bar`.
+
+Two things the `.bar` cannot be asked for and the analysis gives: the
+measurements — paper width, hole separation, margins, scan resolution, punch
+diameter, and the software and date behind them — and a track calibration, since
+the `.bar` is already on tracker positions and states nothing about the image it
+came from. What the `.bar` has and the analysis has not is the paper speed, which
+its `.ann` states as tempo 83.
+
+One thing to pass by hand. `readFromStanfordAton` infers the track shift by
+putting the rewind on the bar's rewind track, and finds it as the holes past the
+last musical attack — which works on the green, whose rewind is a chain of 177
+punches whose continuations carry no attack. Here the rewind is a single punch,
+so it is the head of its own chain, carries an attack, and leaves nothing behind
+it; the fallback, the columns spanning the full track count, does not fire either
+because the occupied ones span 96 of 98. The shift falls back to zero and the
+import comes out unusable, 678 notes and no expression at all. Passing
+`trackShift: track(-12)` gives the reading above, and the `.bar` confirms it
+independently by putting the same counts on the same positions.
 
 **Playback speed is the roll's own.** `setMidiFileTempo` has no figure for this
 format and should not borrow one: Phillips (p. 181) says Licensee rolls play at
