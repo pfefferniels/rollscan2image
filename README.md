@@ -589,23 +589,27 @@ and the tests parse those bytes: description `R Stibbons (c) 2000 02-07`, 2,432
 pixels, tempo 55, 182 lines per inch, 31,022 lines, with the two run sequences
 that follow adding to the line width. Whole files survive too: seven Duo-Art
 scans of November 2000 to July 2001, from Stibbons' section of the
-pianorollmusic.org archive, and `SSSS.CIS` on Julie Porter's roll transport
-page. All eight read end to end here, every line summing to the width.
+pianorollmusic.org archive, `SSSS.CIS` on Julie Porter's roll transport page,
+and Spencer Chase's scan of Welte roll 225, which is
+[described below](#a-licensee-copy-of-the-same-performance). All nine read end
+to end here, every line summing to the width.
 
-Those eight may be most of what is left. A survey of the public archives,
+Those nine may be most of what is left. A survey of the public archives,
 reading the header of every CIS file reachable in them, came to 7,352 files of
-which eight are early. The 2003 revision was close to total, so the path this
-section describes is rarely exercised and worth keeping anyway.
+which eight are early, Chase's not being among them. The 2003 revision was close
+to total, so the path this section describes is rarely exercised and worth
+keeping anyway.
 
-Those eight also settle the resolution, which an early file does not state.
+Those nine also settle the resolution, which an early file does not state.
 `CISREPORT` says it is "inferred from the Scan Width", and two sensors are
 attested. The seven Duo-Art scans are 2,432 pixels wide and measure
 203.7 ± 0.3 dpi against that roll type's 0.11111 in track pitch, the estimates
 spanning 0.7 dpi: that is the 8 dots/mm of a fax sensor, and not the round 200
-PlaySK assumes for a scan it cannot identify. A second machine of that
-generation agrees from the other direction — Spencer Chase's conversion software
-stamped `scanner_horiz_DPI: 204` into every file it wrote — though that is his
-calibration declared rather than a measurement of ours. Porter's is 3,648 pixels, the
+PlaySK assumes for a scan it cannot identify. Chase's scan is the same width and
+measures 203.6 dpi against the Licensee's 1/9 in pitch, on a second machine of
+that generation; his own conversion software stamped `scanner_horiz_DPI: 204`
+into every file it wrote, so the declaration and the measurement agree to within
+half a dot. Porter's is 3,648 pixels, the
 DynaImage A3 that the later files declare as 300 dpi, and read at 300 its
 tracker pitch comes out 0.1228 in against the 0.1227 her own `Rollfile.ini`
 gives for a Wurlitzer 165.
@@ -664,6 +668,9 @@ tiff2holes -g roll300.tif > analysis.txt
 | `--mirror` | mirror across the roll, for a scan with the bass on the right |
 | `--no-despeckle` | keep the scan's isolated lit pixels |
 
+The roll type belongs to `tiff2holes` rather than here: `-g` for a green Welte
+T-98, `-l` for a Welte Licensee, `-r` for a red T-100.
+
 Neither scale has to be measured as it does for MRS. The header records the
 sensor's dots per inch across the roll and the transport's lines per inch along
 it, and on the scan tested those differ — 300 against 360 — so each axis is
@@ -683,6 +690,18 @@ does not correlate with the roll's drift (r = +0.03) where the edge at 177 does
 the bed, or a guide, and not the roll. The paper is therefore taken to be the
 *widest* run of columns dark more often than not, and everything outside it, plus
 a margin for the measured wander, is painted as background.
+
+The margin kept for that wander has to stop where the bed begins, which the
+Licensee scan below made plain. Its lit gap on the bass side is only 18 columns
+wide against the Dyer scan's 49, so the fixed margin of wander plus 16 columns
+reached past it into the bed. Those columns are dark, the parser reads them as
+paper, and the bass margin comes out pinned at the frame edge on every line:
+`analyzeLeaders` then finds a margin that never moves on one side and a roll
+that drifts on the other, and stops with "Cannot find leader". `find_paper`
+therefore reports the dark runs on either side of the paper along with the band
+itself, and `Paper.keep` clips the margin to them; the calibration prints what
+it kept against what it asked for. On a scan with room to spare, Dyer's among
+them, nothing changes.
 
 **A one-bit scan speckles.** Isolated lit pixels that an eight-bit scan would
 have averaged away survive quantisation, and `tiff2holes` counts them as dust:
@@ -814,6 +833,123 @@ the roll, just not part of the performance. Neither of the two original rolls
 above carries one, and on 3414 hole 93 is empty throughout, so a test section is
 evidently not something every green Welte roll was issued with.
 
+### A Licensee copy of the same performance
+
+Spencer Chase's scan of roll 225 is a second copy of the same Grünfeld
+*Träumerei*, and a different edition of it: a Welte-Mignon (Deluxe) Licensee,
+the American re-cut, against Dyer's German green T-98. It also carries the
+2002 header, which makes it the ninth early file this reader has seen and the
+second, after Porter's, from a machine other than Stibbons' own.
+
+```
+header        Knobloch 2002 layout
+title         Traumerei 07-14
+scanner       stepper (assumed)
+raster        54286 lines x 2432 pixels; channels holes
+across        203 dpi (assumed)
+along         180 lines per inch
+tempo         80
+```
+
+The title follows the convention of the format's own sample scan, a scan date
+with no year: 14 July. The file states neither scanner nor across-roll
+resolution, so both are the inferences described under
+[The earlier layout](#the-earlier-layout), and this scan is the first chance to
+check the resolution one against a roll of known geometry. Read at 203 dpi the
+paper comes out 11.256 in and the tracker pitch 0.1114 in, so the pitch implies
+203.6 dpi against a nominal 1/9 in. That sits between the 203.7 ± 0.3 measured
+on Stibbons' Duo-Art scans and the 204 Chase's own conversion software stamped
+into the files it wrote, and it is a measurement on his machine rather than a
+declaration of it.
+
+It parses end to end, every line summing to the width, with no overruns.
+
+Beside the CIS sit Chase's `.bar` and `.ann`, which were all this project had of
+his copy until now. The annotation names the roll correctly — `/roll_class:
+Licensee`, `/roll_number: 225` — and the scan bears that out track for track.
+Its `/roll_tempo: 83` and the header's tempo 80 do not agree with each other, and
+neither agrees with the green's 70; the tempo field is what the operator typed,
+and on this format it is worth no more than that.
+
+Converted to 4096 × 90477 and parsed with `tiff2holes -l`:
+
+| | Chase, Licensee | Dyer, green T-98 |
+| --- | --- | --- |
+| source | 2432 × 54286 at 203 × 180 dpi | 3648 × 115246 at 300 × 360 dpi |
+| paper | 3377.73 px = 11.26 in | 3372.67 px = 11.24 in |
+| hole separation | 33.4130 px = 0.1114 in | 33.2957 px = 0.1110 in |
+| tracker grid residual | 0.092 | 0.043 |
+| tracker holes | 98 | 98 |
+| musical holes / notes | 10080 / 955 | 15681 / 1103 |
+| notes in the compass, before the rewind | **463** | **464** |
+| antidust / tears | 2 / 0 | 2 / 0 |
+
+**The layout is the Licensee's, valve for valve.** Anchoring the tracker grid on
+the rewind puts track 1 at 2.24 spacings from the bass paper edge and track 98 at
+2.45 from the treble, which is the 2.125 the geometry requires to within a
+quarter of a spacing, and every lock-and-cancel pair then comes out matched:
+bass Crescendo off/on at 86 and 86 punches, bass Forzando at 18 and 19, bass Soft
+pedal at 2 and 3, treble Sustain at 52 and 51, treble Forzando at 3 and 3, treble
+Crescendo at 83 and 83. Mezzoforte is punched once on each of its two bass tracks
+and not at all on its treble pair, so this performance never sets the hook.
+The rewind is a single 1.5 in perforation on track 89, 13 in past the last note,
+which is the T-100's dedicated rewind track moved two places in — quite unlike
+the green, where the rewind shares bass hole 1 with Forzando piano and is told
+from it by length. That makes `assignMidiKeyNumbersToHoles`'s rewind check usable
+here, where on the green it had to be switched off.
+
+**Neither the rewind slot nor a test section.** Past the rewind punch the paper
+runs 21 in blank to the end of the scan. The green copy's 15.2 in chain of 177
+punches and its 9.2 in graduated test section have no counterpart, which is why
+the two `MUSICAL_NOTES` totals are not comparable and the note counts in the
+table are taken before each copy's rewind instead.
+
+**On notes the two copies agree to within one**, 463 against 464, and every one
+of the 37 pitches the Licensee carries also appears in the green. The 43 pitches
+the green has and this one has not are its test section sweeping 90 of the 98
+tracks. That is the same agreement the red copy gave, and it is now three
+editions of one performance agreeing on the notes.
+
+**The scan reads holes wider than they are long.** Measured on isolated single
+punches, the Licensee scan gives 0.0788 in across and 0.0611 in along, an aspect
+of 1.29, where the Dyer scan gives 0.0667 and 0.0639, an aspect of 1.04. The
+along figures are close enough to each other to corroborate the header's 180
+lines per inch: a scale wrong by the 14 % that would square the punches up
+would put the die at 0.069 or 0.054 in against the green's 0.0639. So the
+across dimension is the one that is off, by about 0.012 in or two and a half
+sensor pixels, and it is the scanner's own slicing level rather than the roll or
+the resampling. A third of a pixel of it is the 3×3 opening, which takes the
+across width from 0.0837 to 0.0788 in and leaves the length alone.
+
+That bloom trips `tiff2holes`'s aspect check, which rejects a hole wider than
+1.25 times its length as a tear and threw out 6705 of 10079 holes on this scan.
+The check assumes a scan that responds alike in both directions, which this one
+does not, so the threshold is now a `--aspect` option rather than a constant.
+The figure used here is 1.55: the default clears an isotropic scan's 1.04 by a
+factor of 1.20, and the same margin over this scan's 1.29 gives 1.55.
+`BAD_HOLE_COUNT` falls from 6705 to 95, `EDGE_TEAR_COUNT` stays 0, and the
+extracted MIDI is identical either way — the check reaches the quality report
+and the marked-up image, not the music. Whether the bloom should instead be
+taken out of the image is an open question below.
+
+**Playback speed is the roll's own.** `setMidiFileTempo` has no figure for this
+format and should not borrow one: Phillips (p. 181) says Licensee rolls play at
+a range of paper speeds. The parser writes the neutral `setTPQ(480)`, which is
+6 × 80 and happens to match this header's tempo 80, and `cis2roll.py` prints the
+header's tempo and the ticks it implies so the choice stays visible.
+
+Four things about the parser were needed for this scan, on top of the four the
+green copy needed. `setRollTypeLicensee` did not exist — `-l` was declared and
+documented as "not yet active" — and is now implemented from the scale in
+Hagmann (p. 40 f.) and Phillips (p. 123), the layout Stanford's `midi2exp`
+reads, and the same tracker geometry as the green, 98 tracks at nine to the inch
+on 11¼ in paper. `analyzeLeaders` tested each margin separately for a leader and
+stopped on anything else, so a roll that tracks 6 px sideways over its first
+seven inches, as this one does while the transport takes up, was refused as a
+partial roll; the test is now on the width between the margins, which a lateral
+shift leaves alone and a leader does not. The aspect threshold became an option,
+as above. And `setMidiFileTempo` gained the branch described above.
+
 ## Open questions
 
 - The last 6 % of PNG pixels, each off by one level. Probably a rounding or
@@ -834,6 +970,19 @@ evidently not something every green Welte roll was issued with.
   published figures make them nearly equal.
 - Whether the chunk size is fixed per camera or simply a write-buffer size that
   could differ on other scans.
+- Whether the Licensee scan's across-roll bloom should be taken out of the image
+  rather than worked around in the parser. It measures a fairly constant
+  0.012 in, which an erosion of one source pixel across would very nearly
+  undo, and that would put the punches on the green copy's die. But the figure
+  is calibrated against the other copy, and eroding the image to make a
+  threshold pass is the retuning this project has otherwise refused. Whether the
+  bloom is constant, or grows with the punch, would want more than one scan from
+  that machine to say.
+- What the tempo of roll 225 is on Licensee paper. The header says 80, the `.ann`
+  83, and the green copy 70, while the music in the two copies occupies nearly
+  the same length of paper, which those tempi do not predict. Separating paper
+  speed from the shrinkage and stretch of two different papers needs more copies
+  than this, exactly as it does for the green and red pair above.
 
 ## References
 
@@ -852,6 +1001,15 @@ evidently not something every green Welte roll was issued with.
   applied to MRS scans; `LENGTH_DPI` in any analysis produced here is that
   literal constant, not a measurement of the input.
 - roll-image-parser, <https://github.com/pianoroll/roll-image-parser>.
+- Hagmann, P. *Das Welte-Mignon-Klavier, die Welte-Philharmonie-Orgel und die
+  Anfänge der Reproduktion von Musik*, p. 40 f., and Phillips, P. *Piano Rolls
+  and Recorded Piano Rolls*, p. 123 and Table 4.3, for the Welte-Mignon
+  Licensee: 98 positions at nine to the inch on 11¼ in paper, reading the
+  T-100's commands minus its two motor tracks, so the note block and the treble
+  valves sit two positions lower. Phillips p. 181 for Licensee rolls playing at
+  a range of paper speeds. The hole-by-hole layout `setRollTypeLicensee` uses is
+  the one Stanford's `midi2exp` reads; it was checked valve by valve against
+  roll 225 in the `linked-rolls` edition before being carried here.
 - Stibbons, R. *Contact Image Sensor Roll Scanner File Formats*, 22 February
   2003, <http://semitone440.co.uk/rolls/utils/cisheader/cis-format.htm>. The
   header and status-word layout followed by `cis2image.py`.

@@ -20,8 +20,11 @@ Two things need care beyond the resampling.  The sensor is wider than the roll
 and sees the scanner bed beside it, which reads as paper and would otherwise be
 measured as part of the roll; the paper is taken to be the widest run of columns
 dark on nearly every line, and everything outside it is painted as background.
-And a one-bit scan carries isolated lit pixels that an eight-bit one would have
-averaged away, which tiff2holes counts as dust; a 3x3 opening removes them.
+The margin kept for the roll's wander stops where the bed begins, since a frame
+that reached into it would hand the parser a strip of bed as hard margin and
+leave it unable to find the paper edge at all.  And a one-bit scan carries
+isolated lit pixels that an eight-bit one would have averaged away, which
+tiff2holes counts as dust; a 3x3 opening removes them.
 
 The scan is written as it was read.  If the roll comes out with the bass on the
 right or running up the image, say so with --mirror or --rotate.
@@ -82,8 +85,26 @@ class Source:
 
 
 @dataclass(frozen=True)
-class Calibration:
+class Paper:
+    """Where the roll lies across the sensor, and how far the frame may reach beside it.
+
+    The sensor is wider than the roll and the bed shows through on either side
+    as a dark strip, which reads as paper rather than as background.  So the
+    margin kept for the roll's wander has to stop where the bed begins."""
+
     band: PaperBand
+    clear_left: int  # outermost column on each side still free of the bed
+    clear_right: int
+
+    def keep(self, margin: int) -> tuple[int, int]:
+        """Columns to copy into the frame: the paper, and `margin` beyond it where free."""
+        return (max(self.clear_left, self.band.left - margin),
+                min(self.clear_right, self.band.right + margin) + 1)
+
+
+@dataclass(frozen=True)
+class Calibration:
+    paper: Paper
     pitch: float  # source columns between neighbouring tracker tracks
     coherence: float  # 0..1; how tightly the holes sit on the grid
     tracks_seen: int
@@ -151,31 +172,43 @@ def run_around(lit: np.ndarray, anchor: int) -> tuple[int, int] | None:
     return int(starts[holding[0]]), int(ends[holding[0]])
 
 
-def find_paper_band(source: Source) -> PaperBand:
-    """The columns the roll occupies, and how far its edges wander.
+def sample_profiles(source: Source) -> list[np.ndarray]:
+    """Share of the lines lit in each column, one profile per block along the roll."""
+    profiles = [block.mean(axis=0) for block in sample_blocks(source.scan)]
+    return [profile[::-1] for profile in profiles] if source.flip_columns else profiles
+
+
+def edge_wander(profiles: list[np.ndarray], left: int, right: int) -> int:
+    """How far the paper edges move between the blocks sampled along the roll."""
+    inset = 8
+    lefts = [run[0] for run in (run_around(lit, left + inset) for lit in profiles) if run]
+    rights = [run[1] for run in (run_around(lit, right - inset) for lit in profiles) if run]
+    return max(max(lefts) - min(lefts), max(rights) - min(rights)) if lefts and rights else 0
+
+
+def find_paper(source: Source) -> Paper:
+    """The columns the roll occupies, how far its edges wander, and where the bed begins.
 
     A column under the paper is dark on nearly every line, since a track of
     punches is open only briefly.  The bed beside the roll is dark too, so the
-    paper is the widest such run rather than the first one."""
-    blocks = []
-    total = np.zeros(source.scan.header.pixels)
-    counted = 0
-    for block in sample_blocks(source.scan):
-        if source.flip_columns:
-            block = block[:, ::-1]
-        total += block.sum(axis=0)
-        counted += block.shape[0]
-        blocks.append(block.mean(axis=0))
-    overall = widest_dark_run(total / counted) if counted else None
-    if overall is None:
+    paper is the widest such run rather than the first one, and the dark runs
+    on either side of it are the bed."""
+    profiles = sample_profiles(source)
+    if not profiles:
+        raise FormatError("the scan has no lines to measure")
+    overall = np.mean(profiles, axis=0)
+    span = widest_dark_run(overall)
+    if span is None:
         raise FormatError("could not find the roll paper in the scan")
 
-    left, right = overall
-    inset = 8
-    lefts = [run[0] for run in (run_around(lit, left + inset) for lit in blocks) if run]
-    rights = [run[1] for run in (run_around(lit, right - inset) for lit in blocks) if run]
-    wander = max(max(lefts) - min(lefts), max(rights) - min(rights)) if lefts and rights else 0
-    return PaperBand(left, right, wander)
+    left, right = span
+    starts, ends = dark_runs(overall)
+    before, after = ends[ends < left], starts[starts > right]
+    return Paper(
+        band=PaperBand(left, right, edge_wander(profiles, left, right)),
+        clear_left=int(before[-1]) + 1 if before.size else 0,
+        clear_right=int(after[0]) - 1 if after.size else overall.size - 1,
+    )
 
 
 def speckle_share(source: Source) -> float:
@@ -204,12 +237,12 @@ def hole_histogram(source: Source, band: PaperBand) -> np.ndarray:
 
 def calibrate(source: Source) -> Calibration:
     header = source.scan.header
-    band = find_paper_band(source)
-    hist = hole_histogram(source, band)
+    paper = find_paper(source)
+    hist = hole_histogram(source, paper.band)
     bracket = (header.dpi / FINEST_TRACKS_PER_INCH, header.dpi / COARSEST_TRACKS_PER_INCH)
     pitch, phase, coherence = comb_fit(hist, bracket)
     return Calibration(
-        band=band,
+        paper=paper,
         pitch=pitch,
         coherence=coherence,
         tracks_seen=len(occupied_cells(hist, pitch, phase)),
@@ -235,10 +268,10 @@ class Frame:
     def plan(cls, cal: Calibration, scan: Scan, dpi: float, width: int) -> "Frame":
         x_scale = dpi / cal.across_dpi
         y_scale = dpi / cal.along_dpi
-        margin = cal.band.wander + EDGE_MARGIN
-        keep = (max(0, cal.band.left - margin) * x_scale,
-                min(scan.header.pixels, cal.band.right + 1 + margin) * x_scale)
-        centre = (cal.band.left + cal.band.right + 1) / 2 * x_scale
+        band = cal.paper.band
+        first, last = cal.paper.keep(band.wander + EDGE_MARGIN)
+        keep = (first * x_scale, last * x_scale)
+        centre = (band.left + band.right + 1) / 2 * x_scale
         return cls(
             rows=int(round(scan.header.lines * y_scale)),
             width=width,
@@ -312,7 +345,7 @@ def rgb_tiff(path: Path, rows: int, cols: int, dpi: float):
 
 def report(source: Source, cal: Calibration, frame: Frame) -> str:
     scan = source.scan
-    h, b = scan.header, cal.band
+    h, b = scan.header, cal.paper.band
     paper = b.width + 1
     pitch_in = cal.pitch / cal.across_dpi
     target_dpi = cal.along_dpi * frame.y_scale
@@ -324,6 +357,10 @@ def report(source: Source, cal: Calibration, frame: Frame) -> str:
            "and the across scale rests on it" if h.spec is Spec.EARLY else ""),
         f"paper band    columns {b.left}..{b.right} ({paper} px = "
         f"{paper / cal.across_dpi:.3f} in), wander {b.wander} px",
+        f"bed clear     columns {cal.paper.clear_left}..{cal.paper.clear_right}; "
+        f"margin kept {b.left - frame.keep[0] / frame.x_scale:.0f} px bass, "
+        f"{frame.keep[1] / frame.x_scale - 1 - b.right:.0f} px treble "
+        f"of the {b.wander + EDGE_MARGIN} asked for",
         f"tracker grid  pitch {cal.pitch:.3f} px = {pitch_in:.4f} in = "
         f"{pitch_in * MM_PER_INCH:.3f} mm ({1 / pitch_in:.2f} tracks/in), "
         f"coherence {cal.coherence:.3f}, {cal.tracks_seen} tracks occupied",
