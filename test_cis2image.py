@@ -78,8 +78,12 @@ class Decoding(unittest.TestCase):
         self.assertEqual(header.title, "early roll")
         self.assertEqual(header.scanner, cis2image.Scanner.STEPPER)
         self.assertEqual(header.channels, ("holes",))
-        self.assertEqual(header.dpi, cis2image.EARLY_DPI)
         self.assertEqual((header.pixels, header.lpi, header.lines), (10, 182, 2))
+
+    def test_early_resolution_comes_from_the_scan_width(self):
+        self.assertEqual(cis2image.early_dpi(2432), 203)  # fax sensor, 8 dots/mm
+        self.assertEqual(cis2image.early_dpi(3648), 300)  # the DynaImage A3
+        self.assertEqual(cis2image.early_dpi(1216), 100)  # an unattested width
 
     def test_renders_an_early_scan(self):
         holes = self._read(early_cis_bytes(EARLY_LINES)).rows("holes", 0, 2)

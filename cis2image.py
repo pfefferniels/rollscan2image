@@ -49,10 +49,13 @@ OVERRUN = 1 << 15
 PAPER = 170
 CHANNELS = ("holes", "twin", "ink", "composite")
 
-# An early file states no resolution. The 2432-pixel default of the scanners of
-# the day spans a roll and its margins at this figure, which is also what
-# PlaySK assumes for a scan whose type it cannot read.
-EARLY_DPI = 200
+# An early file states no resolution, so CISREPORT takes one "from the Scan
+# Width". Two sensors are attested. Seven of Stibbons' own Duo-Art scans measure
+# 203.7 +/- 0.3 dpi against that roll type's 0.11111 in track pitch, which is the
+# 8 dots/mm of a fax sensor rather than the round 200 PlaySK assumes; the wider
+# module is the DynaImage A3, whose 300 dpi the later files state outright.
+EARLY_SENSORS = {2432: 203, 3648: 300}
+EARLY_BED_INCHES = 12.16  # only for a width neither sensor explains
 
 
 class FormatError(Exception):
@@ -81,6 +84,11 @@ class Scanner(IntEnum):
     @property
     def clocked(self) -> bool:
         return self in (Scanner.POSITION_ENCODER, Scanner.SHAFT_ENCODER)
+
+
+def early_dpi(pixels: int) -> int:
+    """Across-roll resolution of a scan that does not state one, from its width."""
+    return EARLY_SENSORS.get(pixels, round(pixels / EARLY_BED_INCHES))
 
 
 def is_early_layout(raw: bytes) -> bool:
@@ -156,7 +164,7 @@ class Header:
             mirrored=False,
             reversed=False,
             twin_separation_mils=0,
-            dpi=EARLY_DPI,
+            dpi=early_dpi(pixels),
             pixels=pixels,
             changeover=0,
             tempo=tempo,
