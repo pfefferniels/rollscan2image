@@ -459,6 +459,76 @@ The measurement is reported because it bounds a within-scan reading: onset
 differences taken across the compass of the Dyer scan carry up to about 17 ms of
 instrumental origin. It is a caveat to weigh, not a bias to subtract.
 
+### Scatter and the punch matrix
+
+Skew is the first of Stahnke's two systematic errors. The second is scatter, a
+per-column displacement along the roll from tolerances and wear in the punch and
+die set, and beyond both lies his real object: reconstruct the punch matrix by
+snapping every perforation to its nearest row, which removes random error as well
+as systematic. His pipeline applies these in order, so testing skew alone is not
+a test of the method.
+
+Applied here, correcting each copy against its own measurements over 200 mm
+windows:
+
+```
+stage                   grid residual sd (mm)        cross-copy RMS (mm)
+                        Dyer   Chase   MRS      Dyer→MRS  Chase→MRS  Dyer→Chase
+as scanned             0.3322  0.2432  0.4385     0.9900    1.7034     1.1870
+after skew removal     0.3220  0.2432  0.4384     0.9911    1.7010     1.1702
+after scatter removal  0.3213  0.2425  0.4351     0.9947    1.6773     1.1672
+after dynamic skew     0.3218  0.2457  0.4306     0.9965    1.6865     1.1679
+after snapping to rows   -       -       -        1.5479    2.0046     1.4478
+```
+
+The best any stage manages is 3.3 % off a grid residual. Cross-copy agreement
+moves by under 2 % in either direction, and snapping makes it 17 to 56 % worse.
+A second pass degrades every column.
+
+One measurement explains the whole table. **The row grid belongs to the
+continuation punches of held notes, not to the onsets.** Those punches are 93 % of
+all holes and carry the entire periodic signal; measured against the local grid
+they establish, the onsets are near-uniform across the row, at 13.7 % within a
+tenth of a row where uniform would give 13.8 %.
+
+```
+              held punches            note onsets
+Dyer          R 0.683  sd 0.30 mm     R 0.111  sd 0.71 mm
+Chase         R 0.897  sd 0.18 mm     R 0.112  sd 0.81 mm
+MRS           R 0.700  sd 0.40 mm     R 0.158  sd 0.91 mm
+```
+
+Within one note's chain the advance is very regular, to 0.047 mm on the Dyer
+scan. Across chains the phases scatter over most of a row. So there is no single
+punch matrix to snap to, and snapping moves onsets by up to half a row for no
+reason, which is what the last line of the table shows.
+
+A ceiling argument closes the question. Fitting a free offset per column is the
+most general correction of Stahnke's form, since skew is its linear part and
+scatter the remainder, so it bounds whatever skew and scatter could achieve here
+however well they were estimated. That bound is 3.1 % of the residual variance
+for the Dyer scan, 2.2 % for Chase and 1.2 % for MRS, and the straight-line part
+alone is under 0.4 %. No better estimator reopens it.
+
+His model is not describing nothing. Dyer's per-column offsets replicate across
+the two halves of its roll at r = +0.85, so that scatter is a real signature of a
+machine rather than noise; MRS's replicate at r = -0.14, so MRS's apparent
+scatter is noise. MRS's dynamic skew wanders smoothly by about ±0.6 mm, which is
+what he describes for a takeup-spool transport. These are real and they are about
+2 % of the problem.
+
+Why the onsets are continuous where the chains are quantised is inference, not
+measurement: a recording perforator would start each note's chain where the
+performance put it and then advance the paper at its own rate. Two things argue
+for caution. Chase's copy is a counter-case, its onsets sitting on a grid of
+0.6084 mm, a quarter of its chain step, though that is below the 0.75 mm Stahnke
+sets as his own floor for reconstruction. And these are production copies, so any
+claim about a recording machine is one remove from the evidence. There is also a
+plainer possibility not ruled out: the onset scatter concentrates in large,
+low-circularity holes, 17.7 % of the largest quarter by area falling beyond
+four tenths of a row against 0.9 % of the smallest, which points at the parser's
+edge detection on merged holes rather than at the paper.
+
 Stahnke's method goes further in two directions this does not follow. He also
 finds and removes scatter, the column-to-column deviation left once skew is taken
 out, and he reconstructs the punch matrix rather than only measuring its defects.
