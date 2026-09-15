@@ -16,10 +16,10 @@ coded `.CIS`.
 | `mrs2roll.py` | `.mrs`, `.mrsc` | a 300 dpi RGB TIFF for `tiff2holes` |
 | `cis2roll.py` | `.CIS` | a 300 dpi RGB TIFF for `tiff2holes` |
 
-Neither format is documented in one place. What could be worked out about them
-is in [docs/mrs-format.md](docs/mrs-format.md) and
-[docs/cis-format.md](docs/cis-format.md); both rest on a small number of scans,
-so the figures in them may not hold for other rolls or scanner versions.
+MRS and MRSC are specified in [docs/mrs-format.pdf](docs/mrs-format.pdf),
+built from [docs/mrs-format.tex](docs/mrs-format.tex). What could be worked out
+about CIS is in [docs/cis-format.md](docs/cis-format.md). It rests on a small
+number of scans, so its figures may not hold for other rolls or scanner versions.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ python3 mrs2image.py scan.mrs mono.tif --rgb
 
 With no processing options the output is the raw raster, which is dark and
 heavily vignetted but untouched. The three steps `--like-png` bundles are
-described under [From .mrsc to the delivered PNG](docs/mrs-format.md#from-mrsc-to-the-delivered-png).
+specified in section 6 of [docs/mrs-format.pdf](docs/mrs-format.pdf).
 
 Two siblings of the input are read when they are present, the session's
 settings CSV and, for a `.mrsc`, a sibling `.mrs` carrying the roll-type block.
@@ -319,5 +319,5 @@ All of these are fixed in the copy of the parser used here, not upstream.
   T-100's commands minus its two motor tracks, so the note block and the treble
   valves sit two positions lower.
 - The sources for the two scan formats are listed in
-  [docs/mrs-format.md](docs/mrs-format.md) and
+  [docs/mrs-format.pdf](docs/mrs-format.pdf) and
   [docs/cis-format.md](docs/cis-format.md).

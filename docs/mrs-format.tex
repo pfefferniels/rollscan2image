@@ -1,0 +1,212 @@
+% Build: lualatex mrs-format.tex (twice)
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[margin=30mm]{geometry}
+\usepackage{amsmath}
+\usepackage{fontspec}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{decorations.pathreplacing}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\debrunner}[1]{(Debrunner 2011, p.~#1)}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\setlength{\emergencystretch}{2em}
+
+% Tables and figures stay where they are written, caption attached.
+\newenvironment{block}
+  {\par\medskip\noindent\begin{minipage}{\textwidth}\centering}
+  {\end{minipage}\par\medskip}
+
+\title{MRS and MRSC File Format Specification}
+\author{Niels Pfeffer}
+\date{15 September 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+
+The roll scanner of Bern University of Applied Sciences (BFH) records a roll with two line cameras, a monochrome camera in transmitted light and an RGB camera in reflected light.
+An encoder wheel on the paper triggers both cameras every 0.2\,mm \debrunner{39}.
+The data of the two cameras are written to \code{*.mrs} (transmitted light) and \code{*.mrsc} (reflected light) \debrunner{51}.
+A reference implementation is \code{mrs2image.py} in \url{https://github.com/pfefferniels/rollscan2image}.
+
+Offsets and lengths are in bytes. Numbers in header fields are decimal ASCII, zero-padded to ten digits.
+
+\section{Container}
+
+Both formats consist of a 124-byte header, raster data in chunks, each preceded by a marker, and an end marker.
+MRS files end with a metadata trailer.
+
+\begin{block}
+\newcommand{\segment}[4][white]{%
+  \filldraw[fill=#1] (#2,0) rectangle ++(#3,9);
+  \node[align=center] at ({#2+#3/2},4.5) {#4};}
+\begin{tikzpicture}[x=1mm, y=1mm, font=\scriptsize]
+  \segment{0}{20}{header\\124}
+  \segment[black!12]{20}{8}{$M_0$}
+  \segment{28}{18}{chunk 0}
+  \segment[black!12]{46}{8}{$M_1$}
+  \segment{54}{18}{chunk 1}
+  \node at (75,4.5) {\dots};
+  \segment[black!12]{78}{10}{$M_{b-1}$}
+  \segment{88}{18}{chunk $b-1$}
+  \segment[black!12]{106}{7}{$E$}
+  \segment{113}{12}{Def.\\size}
+  \segment{125}{16}{INI}
+  \draw[decorate, decoration={brace, mirror, amplitude=2mm}] (20,-1.5) -- (113,-1.5)
+    node[midway, below=2.5mm] {$d$};
+  \draw[decorate, decoration={brace, mirror, amplitude=2mm}] (113,-1.5) -- (141,-1.5)
+    node[midway, below=2.5mm] {MRS only};
+\end{tikzpicture}
+\captionof{figure}{Container layout, not to scale. $M_i$ is the marker of chunk $i$, $E$ the end marker.}
+\label{fig:container}
+\end{block}
+
+\begin{block}
+\begin{tabularx}{\textwidth}{@{}llL@{}}
+\toprule
+Offset & Length & Content \\
+\midrule
+0 & 30 & \code{Headsize in Bytes = }$h$ \\
+30 & 64 & \code{␣Date = }\textit{DD.MM.YYYY}\code{, MRS }\textit{kk}\code{ Nr = V.}\textit{x.y}\code{, Scan Number = }$s$\code{;} \\
+94 & 30 & \code{Datasize in Bytes = }$d$ \\
+124 & 10 & marker \code{\$000000000} \\
+134 & $kL$ & chunk 0 \\
+ & 10 & marker \code{\$000000001} \\
+ & $kL$ & chunk 1, and so on \\
+$114 + d$ & 10 & end marker \code{\$999999999} \\
+$124 + d$ & 30 & MRS only: \code{Def.size in Bytes = }$m$ \\
+$154 + d$ & $m$ & MRS only: metadata \\
+\bottomrule
+\end{tabularx}
+\captionof{table}{Byte layout. ␣ is a space.}
+\label{tab:container}
+\end{block}
+
+\begin{itemize}
+\item The header fields follow each other without separators.
+\item $h$ is the length of the middle field, always 64.
+\item \textit{kk} is \code{SW} in MRS and \code{Co} in MRSC, \textit{x.y} is the format version and $s$ the scan number.
+\item $d$ is the number of bytes from offset 124 to the end of the end marker.
+\item A marker is \code{\$} followed by the chunk number in nine digits, starting at 0.
+\item A chunk holds $k$ lines of $L$ bytes each (Table~\ref{tab:rasters}).
+\end{itemize}
+
+The number of chunks $b$ and the number of lines $z$ follow from $d$:
+\[
+b = \left\lceil \frac{d - 10}{kL + 10} \right\rceil
+\qquad
+z = \frac{d - 10\,(b + 1)}{L}
+\]
+
+\section{Rasters}
+
+\begin{block}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & MRS & MRSC \\
+\midrule
+Camera & transmitted light, monochrome & reflected light, RGB \\
+\textit{kk} & \code{SW} & \code{Co} \\
+Pixels per line $n$ & 2048 & 2098 \\
+Bytes per pixel & 1 (grey) & 3 (red, green, blue) \\
+Bytes per line $L$ & 2048 & 6294 \\
+Lines per chunk $k$ & 1000 & 1 \\
+Line spacing & 0.2\,mm & 0.2\,mm \\
+Pixel spacing, nominal & 0.22\,mm & 0.21\,mm \\
+Holes & bright & colour of the backing \\
+Metadata trailer & yes & no \\
+\bottomrule
+\end{tabular}
+\captionof{table}{The two rasters. Nominal pixel spacing after \debrunner{40}.}
+\label{tab:rasters}
+\end{block}
+
+Values are unsigned 8-bit integers.
+Line 0 is the start of the scan. A line spans the camera's field of view, which extends beyond both paper edges.
+Both cameras scan across the roll in the same direction. The two rasters are not registered to each other.
+The pixel spacing across the roll is not stored. It is determined per scan from \code{Roll Width} or from the track grid of the roll.
+
+\section{Metadata trailer}
+
+After the end marker, MRS files contain the 30-byte field \code{Def.size in Bytes = }$m$, followed by $m$ bytes of INI text up to the end of the file.
+Lines have the form \textit{key}\code{=}\textit{value} and are grouped under section names in square brackets. Line endings are CR\,LF, the encoding is Latin-1. Unset values are empty.
+
+The keys are listed in Table~\ref{tab:trailer}. $N$ is the value of \code{Number Of Tracks}.
+\code{Roll Width}, \code{First Track} and \code{Last Track} are in mm, the track positions measured from the same paper edge.
+\code{Play Speed} is in mm/s.
+
+\begin{block}
+\begin{tabularx}{\textwidth}{@{}lL@{}}
+\toprule
+Section & Keys \\
+\midrule
+\code{[Soundtrack 1]} & \code{Soundtrack Name}, \code{Composer First Name}, \code{Composer Last Name}, \code{Arranger First Name}, \code{Arranger Last Name}, \code{Interpret First Name}, \code{Interpret Last Name} \\
+\addlinespace
+\code{[Rolltype]} & \code{Name}, \code{Track Shifts}, \code{Control Track Position}, \code{Number Of Tracks}, \code{Roll Width}, \code{First Track}, \code{Last Track}, \code{Track Alignement}, \code{Track Width}, \code{Trackgap}, \code{Min Track Length}, \code{Track 1} \dots\ \code{Track }$N$ \\
+\addlinespace
+\code{[Definition]} & \code{Title}, \code{Recording Year}, \code{Recording Location}, \code{Producer}, \code{Running Time}, \code{Play Speed}, \code{Notes}, \code{Catalogue Number}, \code{Catalogue Number 2}, \code{Is Replica}, \code{Paper Type}, \code{Roll Length}, \code{Box State} \\
+\bottomrule
+\end{tabularx}
+\captionof{table}{Sections and keys of the metadata trailer, in file order.}
+\label{tab:trailer}
+\end{block}
+
+\section{Settings file}
+
+The recording software writes a CSV file with the base name of the MRSC file.
+Every field is terminated by a semicolon. The first line is \code{DateTime;Group;Variable;Value;Unit;}.
+Group \code{Images.settings} holds settings without unit, group \code{Images} holds measurements with the unit in square brackets.
+
+\begin{block}
+\begin{tabularx}{\textwidth}{@{}lL@{}}
+\toprule
+Variable & Content \\
+\midrule
+\code{MRSC\_Brightness\_Correction\_Enable} & brightness correction (\code{True}, \code{False}) \\
+\code{MRSC\_Brightness\_Courve\_A}, \code{\_B}, \code{\_C} & coefficients $A$, $B$, $C$ of the brightness curve \\
+\code{MRSC\_SpatialCorrOfOneColor} & colour row offset $\delta$ in lines \\
+\code{MRSC\_DetectPencil}$j$\code{\_Enable} & pencil detection in range $j$ (\code{True}, \code{False}) \\
+\code{MRSC\_DetectPencil}$j$\code{\_minValues} & lower colour of range $j$ \\
+\code{MRSC\_DetectPencil}$j$\code{\_maxValues} & upper colour of range $j$ \\
+\code{MRSC\_DetectTape}$j$\code{\_Enable} & tape detection in range $j$ (\code{True}, \code{False}) \\
+\code{MRSC\_DetectTape}$j$\code{\_minValues} & lower colour of range $j$ \\
+\code{MRSC\_DetectTape}$j$\code{\_maxValues} & upper colour of range $j$ \\
+\code{MRSC\_DetectedPixels\_Overwrite} & overwrite detected pixels (\code{True}, \code{False}) \\
+\code{MRSC\_Length} & length of the scan in m \\
+\code{MRSC\_PensilPixels} & pencil pixels in permille \\
+\code{MRSC\_TapePixels} & tape pixels in permille \\
+\bottomrule
+\end{tabularx}
+\captionof{table}{Variables of the settings file, $j \in \{1, 2\}$. Colours are written as \code{Color [A=}$a$\code{, R=}$r$\code{, G=}$g$\code{, B=}$b$\code{]}.}
+\label{tab:settings}
+\end{block}
+
+\section{Colour image}
+
+The PNG delivered by the scanner is computed from the MRSC raster by colour registration, brightness correction and mirroring.
+Scan lines become columns, pixels become rows:
+\[
+p(x,\, n - 1 - s,\, i) = \min\left(255,\ \left\lfloor r(x + \delta_i,\, s,\, i) \cdot \frac{c_{\max}}{c(s)} \right\rfloor\right)
+\]
+\begin{itemize}
+\item $r(x, s, i)$ is the MRSC value in line $x$, pixel $s$ and channel $i \in \{\mathrm{R}, \mathrm{G}, \mathrm{B}\}$.
+\item $\delta_{\mathrm{R}} = 2\delta$, $\delta_{\mathrm{G}} = \delta$, $\delta_{\mathrm{B}} = 0$, with $\delta$ = \code{MRSC\_SpatialCorrOfOneColor}.
+\item $c(s) = As^2 + Bs + C$, and $c_{\max}$ is the maximum of $c(s)$ for $0 \le s < n$.
+\item If \code{MRSC\_Brightness\_Correction\_Enable} is \code{False}, $c_{\max}/c(s) = 1$.
+\item The image has $z - 2\delta$ columns and $n$ rows.
+\end{itemize}
+
+\section*{References}
+
+Debrunner, Daniel. 2011. “Die Entwicklung des Musikrollenscanners der Berner Fachhochschule – aus Musikrollenbildern wird Musik – die elektronische Steuerung der Welte-Philharmonie-Orgel.” In \textit{Wie von Geisterhand. Aus Seewen in die Welt. 100 Jahre Welte-Philharmonie-Orgel}, 35–63. Seewen.
+
+\end{document}
