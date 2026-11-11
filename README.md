@@ -128,8 +128,12 @@ at column 0, and holes brighter than the paper.
 Both tools resample onto a square-pixel 300 dpi grid and centre the paper in a
 4096-column frame. The two axes need different scale factors, since neither
 scanner has square pixels. The roll type belongs to `tiff2holes` rather than to
-these tools: `-r` for a red Welte T-100, `-g` for a green T-98, `-l` for a
-Licensee.
+these tools, and of the Welte types it knows only the red T-100 (`-r`): `-g`
+stops with "GREEN ROLL NOT IMPLEMENT YET" and there is no setting for a
+Licensee. A green or a Licensee roll is parsed with `-r` all the same. The
+parser finds the holes and numbers their columns from the image; which bar
+those columns are read on is said where the analysis is read, as linked-rolls'
+`readFromStanfordAton` takes the system the roll was cut for.
 
 ### mrs2roll.py
 
@@ -182,7 +186,7 @@ untested.
 ```sh
 python3 cis2roll.py roll.CIS --dry-run     # show the calibration
 python3 cis2roll.py roll.CIS roll300.tif
-tiff2holes -g roll300.tif > analysis.txt
+tiff2holes -r roll300.tif > analysis.txt   # whatever Welte system the roll is for, see above
 ```
 
 | Option | Effect |
